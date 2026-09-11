@@ -1,0 +1,433 @@
+import network
+import socket
+import time
+import ujson
+from ir_send import send_by_name
+from ir_codes import list_codes
+from ir_strahler import IRStrahler
+
+WIFI_SSID = "DEIN_WLAN_NAME"
+WIFI_PASSWORD = "DEIN_WLAN_PASSWORT"
+
+STRAHLER_PIN = 16  # anpassen an das GPIO, mit dem das Relais/MOSFET verbunden ist
+CONFIG_FILE = "/config.json"
+
+strahler = IRStrahler(STRAHLER_PIN)
+
+LAST_FILE = "/last_sent.json"
+
+
+def save_last(name):
+    with open(LAST_FILE, "w") as f:
+        ujson.dump({"name": name, "ts": time.time()}, f)
+
+
+def load_last():
+    try:
+        with open(LAST_FILE) as f:
+            return ujson.load(f)
+    except OSError:
+        return {"name": None, "ts": 0}
+
+
+def load_config():
+    try:
+        with open(CONFIG_FILE) as f:
+            return ujson.load(f)
+    except OSError:
+        return {"standort": "", "notizen": ""}
+
+
+def save_config(data):
+    cfg = load_config()
+    cfg.update(data)
+    with open(CONFIG_FILE, "w") as f:
+        ujson.dump(cfg, f)
+    return cfg
+
+
+HTML_PAGE = """<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Raytec Fernbedienung</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,Helvetica,Arial,sans-serif;max-width:380px;margin:20px auto;padding:0 12px;background:#e9e9e9}
+  .remote{background:#f5f5f0;border:3px solid #1a1a1a;border-radius:32px;padding:20px 16px 26px;box-shadow:0 6px 16px rgba(0,0,0,.2)}
+  .headers{display:grid;grid-template-columns:repeat(3,1fr);text-align:center;font-weight:700;font-size:12px;letter-spacing:.03em;color:#222;margin-bottom:10px}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px}
+  .btn{position:relative;aspect-ratio:1;border-radius:50%;border:none;background:#e8e8e3;box-shadow:inset 0 1px 2px rgba(255,255,255,.8), 0 1px 2px rgba(0,0,0,.15);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;cursor:pointer;color:#222;user-select:none}
+  .btn:active{filter:brightness(.92)}
+  .btn.empty{visibility:hidden;box-shadow:none;background:none}
+  .btn svg{width:66%;height:66%}
+  .fill .ring{position:absolute;inset:0;border-radius:50%;background:conic-gradient(#c62828 var(--pct,0%), #f5f5f0 0)}
+  .fill .stem{position:absolute;top:-4px;left:50%;transform:translateX(-50%);width:8px;height:5px;background:#1a1a1a;border-radius:2px;z-index:2}
+  .crossed{position:relative}
+  .crossed::after{content:'';position:absolute;width:126%;height:2px;background:#1a1a1a;transform:rotate(-40deg);z-index:3}
+  .last-sent{box-shadow:0 0 0 3px #2e7d32, inset 0 1px 2px rgba(255,255,255,.8) !important}
+  .last-sent::before{content:'';position:absolute;top:-3px;right:-3px;width:12px;height:12px;border-radius:50%;background:#2e7d32;border:2px solid #f5f5f0;z-index:4}
+  .pill.last-sent{box-shadow:0 0 0 3px #2e7d32 !important}
+  .sbtn.active-state{box-shadow:0 0 0 3px #2e7d32 !important}
+  .last-label{text-align:center;font-size:11px;color:#2e7d32;font-weight:700;margin-top:8px;min-height:14px}
+  .telemetry{border:2px solid #1a1a1a;border-radius:22px;padding:10px 12px 14px;margin-bottom:18px}
+  .telemetry-label{text-align:center;font-size:11px;font-weight:700;letter-spacing:.05em;margin-bottom:8px;color:#222}
+  .telemetry-row{display:flex;gap:10px}
+  .pill{flex:1;border-radius:20px;background:#e8e8e3;box-shadow:inset 0 1px 2px rgba(255,255,255,.8), 0 1px 2px rgba(0,0,0,.15);padding:12px 0;text-align:center;font-size:12px;font-weight:700;cursor:pointer}
+  .pill:active{filter:brightness(.92)}
+  .bottom-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .btn.lock{background:#c62828;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+  .btn.lock::after{background:#fff}
+  .btn.reset{background:#c62828;color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+  .brand{text-align:center;margin-top:16px}
+  .brand .ray{color:#c62828;font-weight:800;font-size:22px;font-style:italic}
+  .brand .tec{color:#555;font-weight:800;font-size:22px}
+  .section{margin-top:22px;padding-top:14px;border-top:1px solid #ccc}
+  .section h3{margin:0 0 10px;font-size:15px;color:#222}
+  .row{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;flex-wrap:wrap}
+  input,textarea{padding:7px;font-size:14px;border:1px solid #999;border-radius:6px;font-family:inherit}
+  input[type=number]{width:70px}
+  input[type=text]{flex:1;min-width:120px}
+  textarea{width:100%;min-height:60px;resize:vertical}
+  .sbtn{padding:10px;font-size:14px;border-radius:8px;border:1px solid #333;background:#fff;flex:1;cursor:pointer}
+  .sbtn.stop{background:#333;color:#fff}
+  .sbtn.save{background:#2e7d32;color:#fff;border-color:#1b5e20}
+  #status,#cfgstatus{font-size:13px;color:#555;margin-top:6px}
+  .state-badge{font-weight:700;padding:2px 8px;border-radius:10px;background:#ccc;color:#333}
+  .state-badge.on{background:#2e7d32;color:#fff}
+  .state-badge.off{background:#999;color:#fff}
+  .info-icon{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#777;color:#fff;font-size:11px;font-style:italic;font-weight:700;cursor:help;position:relative;margin-left:6px;vertical-align:middle}
+  .info-icon .tooltip{visibility:hidden;opacity:0;position:absolute;top:130%;left:0;width:230px;background:#222;color:#fff;font-size:11px;font-style:normal;font-weight:400;line-height:1.5;padding:10px 12px;border-radius:8px;transition:opacity .15s;z-index:10;text-align:left;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+  .info-icon:hover .tooltip,.info-icon:active .tooltip{visibility:visible;opacity:1}
+</style></head><body>
+<div class="section" style="margin-top:0;padding-top:0;border-top:none">
+  <h3>Standort</h3>
+  <div class="row">
+    <input id="standort" type="text" placeholder="z.B. Lagerhalle Nord, Mast 3">
+  </div>
+  <h3>Notizen</h3>
+  <div class="row">
+    <textarea id="notizen" placeholder="Freitext..."></textarea>
+  </div>
+  <div class="row">
+    <button class="sbtn save" onclick="saveConfig()">Speichern</button>
+  </div>
+  <p id="cfgstatus"></p>
+</div>
+
+<div class="remote">
+  <div class="headers"><div>POWER</div><div>PHOTOCELL</div><div>TIMER</div></div>
+  <div class="grid">
+    <div class="btn" data-code="power_5"><svg viewBox="0 0 40 40" stroke="#222" stroke-width="1.8" fill="none">
+  <circle cx="10" cy="20" r="8.5"/>
+  <text x="7" y="24" font-size="11" font-weight="700" stroke="none" fill="#222">5</text>
+  <path d="M18.5 6 A16 16 0 0 1 18.5 34" stroke-linecap="round"/>
+  <line x1="21" y1="11" x2="29" y2="11" stroke-linecap="round"/>
+  <line x1="23" y1="17" x2="32" y2="17" stroke-linecap="round"/>
+  <line x1="23" y1="23" x2="32" y2="23" stroke-linecap="round"/>
+  <line x1="21" y1="29" x2="29" y2="29" stroke-linecap="round"/>
+</svg></div>
+    <div class="btn" data-code="photocell_1"><svg viewBox="0 0 24 24" fill="none" stroke="#222" stroke-width="1.6">
+      <circle cx="12" cy="12" r="8.5"/>
+      <circle cx="9" cy="10" r="1.2" fill="#222" stroke="none"/>
+      <circle cx="15" cy="10" r="1.2" fill="#222" stroke="none"/>
+    </svg></div>
+    <div class="btn fill" data-code="timer_full" style="--pct:100%;color:#fff"><div class="ring"></div><div class="stem"></div></div>
+
+    <div class="btn" data-code="power_4"><svg viewBox="0 0 40 40" stroke="#222" stroke-width="1.8" fill="none">
+  <circle cx="10" cy="20" r="8.5"/>
+  <text x="7" y="24" font-size="11" font-weight="700" stroke="none" fill="#222">4</text>
+  <path d="M18.5 6 A16 16 0 0 1 18.5 34" stroke-linecap="round"/>
+  <line x1="21" y1="11" x2="29" y2="11" stroke-linecap="round"/>
+  <line x1="23" y1="17" x2="32" y2="17" stroke-linecap="round"/>
+  <line x1="23" y1="23" x2="32" y2="23" stroke-linecap="round"/>
+  <line x1="21" y1="29" x2="29" y2="29" stroke-linecap="round"/>
+</svg></div>
+    <div class="btn" data-code="photocell_2"><svg viewBox="0 0 24 24">
+      <mask id="m2"><rect width="24" height="24" fill="#fff"/><circle cx="15" cy="8.5" r="8.3" fill="#000"/></mask>
+      <circle cx="12" cy="12" r="8.5" fill="#222" mask="url(#m2)"/>
+    </svg></div>
+    <div class="btn fill" data-code="timer_75" style="--pct:75%"><div class="ring"></div><div class="stem"></div></div>
+
+    <div class="btn" data-code="power_3"><svg viewBox="0 0 40 40" stroke="#222" stroke-width="1.8" fill="none">
+  <circle cx="10" cy="20" r="8.5"/>
+  <text x="7" y="24" font-size="11" font-weight="700" stroke="none" fill="#222">3</text>
+  <path d="M18.5 6 A16 16 0 0 1 18.5 34" stroke-linecap="round"/>
+  <line x1="21" y1="11" x2="29" y2="11" stroke-linecap="round"/>
+  <line x1="23" y1="17" x2="32" y2="17" stroke-linecap="round"/>
+  <line x1="23" y1="23" x2="32" y2="23" stroke-linecap="round"/>
+  <line x1="21" y1="29" x2="29" y2="29" stroke-linecap="round"/>
+</svg></div>
+    <div class="btn" data-code="photocell_3"><svg viewBox="0 0 24 24">
+      <mask id="m3"><rect width="24" height="24" fill="#fff"/><circle cx="17.5" cy="7" r="8.3" fill="#000"/></mask>
+      <circle cx="12" cy="12" r="8.5" fill="#222" mask="url(#m3)"/>
+    </svg></div>
+    <div class="btn fill" data-code="timer_50" style="--pct:50%"><div class="ring"></div><div class="stem"></div></div>
+
+    <div class="btn" data-code="power_2"><svg viewBox="0 0 40 40" stroke="#222" stroke-width="1.8" fill="none">
+  <circle cx="10" cy="20" r="8.5"/>
+  <text x="7" y="24" font-size="11" font-weight="700" stroke="none" fill="#222">2</text>
+  <path d="M18.5 6 A16 16 0 0 1 18.5 34" stroke-linecap="round"/>
+  <line x1="21" y1="11" x2="29" y2="11" stroke-linecap="round"/>
+  <line x1="23" y1="17" x2="32" y2="17" stroke-linecap="round"/>
+  <line x1="23" y1="23" x2="32" y2="23" stroke-linecap="round"/>
+  <line x1="21" y1="29" x2="29" y2="29" stroke-linecap="round"/>
+</svg></div>
+    <div class="btn crossed" data-code="photocell_off"><svg viewBox="0 0 24 24">
+      <mask id="m4"><rect width="24" height="24" fill="#fff"/><circle cx="17.5" cy="7" r="8.3" fill="#000"/></mask>
+      <circle cx="12" cy="12" r="8.5" fill="#222" mask="url(#m4)"/>
+    </svg></div>
+    <div class="btn fill" data-code="timer_25" style="--pct:25%"><div class="ring"></div><div class="stem"></div></div>
+
+    <div class="btn" data-code="power_1"><svg viewBox="0 0 40 40" stroke="#222" stroke-width="1.8" fill="none">
+  <circle cx="10" cy="20" r="8.5"/>
+  <text x="7" y="24" font-size="11" font-weight="700" stroke="none" fill="#222">1</text>
+  <path d="M18.5 6 A16 16 0 0 1 18.5 34" stroke-linecap="round"/>
+  <line x1="21" y1="11" x2="29" y2="11" stroke-linecap="round"/>
+  <line x1="23" y1="17" x2="32" y2="17" stroke-linecap="round"/>
+  <line x1="23" y1="23" x2="32" y2="23" stroke-linecap="round"/>
+  <line x1="21" y1="29" x2="29" y2="29" stroke-linecap="round"/>
+</svg></div>
+    <div class="btn empty"></div>
+    <div class="btn fill crossed" data-code="timer_off" style="--pct:0%"><div class="ring"></div><div class="stem"></div></div>
+
+  </div>
+
+  <div class="telemetry">
+    <div class="telemetry-label">TELEMETRY</div>
+    <div class="telemetry-row">
+      <div class="pill" data-code="tel">TEL</div>
+      <div class="pill" data-code="dim">DIM</div>
+    </div>
+  </div>
+
+  <div class="bottom-row">
+    <div class="btn lock crossed" data-code="lock"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6">
+  <rect x="9" y="4" width="7" height="16" rx="3"/>
+  <circle cx="12.5" cy="8" r="0.9" fill="#fff" stroke="none"/>
+  <path d="M17 8A6 6 0 0 1 17 16" stroke-linecap="round"/>
+  <path d="M19.3 5.3A10 10 0 0 1 19.3 18.7" stroke-linecap="round"/>
+</svg></div>
+    <div class="btn" data-code="status" style="font-size:9px">STATUS</div>
+    <div class="btn reset" data-code="reset" style="font-size:10px">RESET</div>
+  </div>
+
+  <div class="brand"><span class="ray">ray</span><span class="tec">TEC</span></div>
+  <div class="last-label" id="lastLabel"></div>
+</div>
+
+<div class="section">
+  <h3>Strahler pulsen
+    <span class="info-icon">i<span class="tooltip">
+      <b>Verkabelung</b> (Raytec External Input, Volt Free):<br>
+      <b>Purple</b> &rarr; Pico <b>GND</b><br>
+      <b>Orange</b> &rarr; Pico <b id="strahlerPin2">-</b><br><br>
+      Open-Drain-Prinzip: "An" zieht die Leitung auf LOW (Kurzschluss-Simulation),
+      "Aus" laesst sie als hochohmigen Eingang los. Es wird nie aktiv Spannung angelegt.
+    </span></span>
+  </h3>
+  <div class="row" style="font-size:12px;color:#666">
+    Relais-GPIO: <b id="strahlerPin">-</b> &nbsp;|&nbsp; Status: <span id="strahlerState" class="state-badge">-</span>
+  </div>
+  <div class="row">
+    <label>An (ms)</label><input id="on_ms" value="100" type="number">
+    <label>Aus (ms)</label><input id="off_ms" value="50" type="number">
+  </div>
+  <div class="row">
+    <button class="sbtn" id="btnStart" onclick="startStrahler()">Start</button>
+    <button class="sbtn stop" id="btnStop" onclick="stopStrahler()">Stop</button>
+  </div>
+  <p id="status"></p>
+</div>
+
+<script>
+document.querySelectorAll('[data-code]').forEach(b=>{
+  b.onclick = ()=>{
+    b.style.filter='brightness(.7)';
+    fetch('/api/send/'+b.dataset.code, {method:'POST'})
+      .then(()=>markLast(b.dataset.code))
+      .finally(()=>setTimeout(()=>b.style.filter='',150));
+  };
+});
+function markLast(name){
+  document.querySelectorAll('.last-sent').forEach(el=>el.classList.remove('last-sent'));
+  const el = document.querySelector('[data-code="'+name+'"]');
+  if(el) el.classList.add('last-sent');
+  document.getElementById('lastLabel').innerText = 'zuletzt gesendet: ' + name;
+}
+function loadLast(){
+  fetch('/api/last').then(r=>r.json()).then(d=>{
+    if(d.name) markLast(d.name);
+  });
+}
+function startStrahler(){
+  const on_ms = document.getElementById('on_ms').value;
+  const off_ms = document.getElementById('off_ms').value;
+  fetch('/api/strahler/start?on_ms='+on_ms+'&off_ms='+off_ms, {method:'POST'})
+    .then(()=>{
+      document.getElementById('status').innerText='laeuft: '+on_ms+'ms an / '+off_ms+'ms aus';
+      loadStrahlerStatus();
+    });
+}
+function stopStrahler(){
+  fetch('/api/strahler/stop', {method:'POST'})
+    .then(()=>{
+      document.getElementById('status').innerText='gestoppt';
+      loadStrahlerStatus();
+    });
+}
+function loadStrahlerStatus(){
+  fetch('/api/strahler/status').then(r=>r.json()).then(s=>{
+    document.getElementById('strahlerPin').innerText = 'GP' + s.pin;
+    document.getElementById('strahlerPin2').innerText = 'GP' + s.pin;
+    const badge = document.getElementById('strahlerState');
+    badge.innerText = s.running ? 'AN' : 'AUS';
+    badge.className = 'state-badge ' + (s.running ? 'on' : 'off');
+    document.getElementById('btnStart').classList.toggle('active-state', s.running);
+    document.getElementById('btnStop').classList.toggle('active-state', !s.running);
+    if(s.running){
+      document.getElementById('on_ms').value = s.on_ms;
+      document.getElementById('off_ms').value = s.off_ms;
+    }
+  });
+}
+setInterval(loadStrahlerStatus, 5000);
+function loadConfig(){
+  fetch('/api/config').then(r=>r.json()).then(cfg=>{
+    document.getElementById('standort').value = cfg.standort || '';
+    document.getElementById('notizen').value = cfg.notizen || '';
+  });
+}
+function saveConfig(){
+  const data = {
+    standort: document.getElementById('standort').value,
+    notizen: document.getElementById('notizen').value
+  };
+  fetch('/api/config', {method:'POST', body: JSON.stringify(data)})
+    .then(()=>document.getElementById('cfgstatus').innerText='gespeichert');
+}
+loadConfig();
+loadLast();
+loadStrahlerStatus();
+</script>
+</body></html>
+"""
+
+
+def connect_wifi(ssid=WIFI_SSID, password=WIFI_PASSWORD, timeout_s=20):
+    wlan = network.WLAN(network.STA_IF)
+    wlan.active(True)
+    wlan.connect(ssid, password)
+    start = time.ticks_ms()
+    while not wlan.isconnected():
+        if time.ticks_diff(time.ticks_ms(), start) > timeout_s * 1000:
+            raise RuntimeError("WLAN-Verbindung fehlgeschlagen")
+        time.sleep_ms(200)
+    print("WLAN verbunden:", wlan.ifconfig())
+    return wlan
+
+
+def parse_query(query):
+    params = {}
+    for pair in query.split("&"):
+        if "=" in pair:
+            k, v = pair.split("=", 1)
+            params[k] = v
+    return params
+
+
+def handle_request(method, path, params, body):
+    if path == "/" and method == "GET":
+        return 200, "text/html", HTML_PAGE
+    if path == "/api/buttons" and method == "GET":
+        return 200, "application/json", ujson.dumps(list_codes())
+    if path.startswith("/api/send/") and method == "POST":
+        name = path[len("/api/send/"):]
+        try:
+            send_by_name(name)
+            save_last(name)
+            return 200, "application/json", '{"ok":true}'
+        except Exception as e:
+            return 500, "application/json", ujson.dumps({"ok": False, "error": str(e)})
+    if path == "/api/last" and method == "GET":
+        return 200, "application/json", ujson.dumps(load_last())
+    if path == "/api/strahler/start" and method == "POST":
+        on_ms = int(params.get("on_ms", 100))
+        off_ms = int(params.get("off_ms", 50))
+        strahler.start(on_ms=on_ms, off_ms=off_ms)
+        return 200, "application/json", '{"ok":true}'
+    if path == "/api/strahler/stop" and method == "POST":
+        strahler.stop()
+        return 200, "application/json", '{"ok":true}'
+    if path == "/api/strahler/status" and method == "GET":
+        return 200, "application/json", ujson.dumps({
+            "running": strahler.running,
+            "pin": STRAHLER_PIN,
+            "on_ms": strahler.on_ms,
+            "off_ms": strahler.off_ms,
+        })
+    if path == "/api/config" and method == "GET":
+        return 200, "application/json", ujson.dumps(load_config())
+    if path == "/api/config" and method == "POST":
+        try:
+            data = ujson.loads(body) if body else {}
+            cfg = save_config(data)
+            return 200, "application/json", ujson.dumps(cfg)
+        except Exception as e:
+            return 500, "application/json", ujson.dumps({"ok": False, "error": str(e)})
+    return 404, "text/plain", "not found"
+
+
+def run_server(port=80):
+    addr = socket.getaddrinfo("0.0.0.0", port)[0][-1]
+    s = socket.socket()
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind(addr)
+    s.listen(4)
+    print("Server laeuft auf Port", port)
+    while True:
+        cl, remote_addr = s.accept()
+        try:
+            req = cl.recv(2048)
+            if not req:
+                continue
+            header_end = req.find(b"\r\n\r\n")
+            header_part = req[:header_end if header_end != -1 else len(req)].decode()
+            lines = header_part.split("\r\n")
+            request_line = lines[0]
+            content_length = 0
+            for h in lines[1:]:
+                if h.lower().startswith("content-length:"):
+                    content_length = int(h.split(":", 1)[1].strip())
+            body_bytes = req[header_end + 4:] if header_end != -1 else b""
+            while len(body_bytes) < content_length:
+                body_bytes += cl.recv(1024)
+            body = body_bytes.decode()
+
+            parts = request_line.split(" ")
+            method, path = parts[0], parts[1]
+            query = ""
+            if "?" in path:
+                path, query = path.split("?", 1)
+            params = parse_query(query)
+
+            status, ctype, resp_body = handle_request(method, path, params, body)
+            header = "HTTP/1.1 {} OK\r\nContent-Type: {}\r\nConnection: close\r\n\r\n".format(status, ctype)
+            data = (header + resp_body).encode()
+            mv = memoryview(data)
+            total = 0
+            while total < len(data):
+                sent = cl.send(mv[total:])
+                total += sent
+        except Exception as e:
+            print("Fehler bei Request:", e)
+        finally:
+            cl.close()
+
+
+def main():
+    connect_wifi()
+    run_server()
+
+
+if __name__ == "__main__":
+    main()

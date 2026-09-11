@@ -2,13 +2,23 @@ from machine import Pin, Timer
 
 
 class IRStrahler:
-    """Schaltet einen GPIO (z.B. Relais/MOSFET fuer den IR-Strahler)
-    in einem frei konfigurierbaren An/Aus-Rhythmus, per Hardware-Timer
-    (keine Blockierung, kein Busy-Loop)."""
+    """Schaltet einen GPIO in einem frei konfigurierbaren An/Aus-Rhythmus,
+    per Hardware-Timer (keine Blockierung, kein Busy-Loop).
 
-    def __init__(self, pin_num, active_high=True, timer_id=-1):
-        self.pin = Pin(pin_num, Pin.OUT)
+    open_drain=True (Standard): simuliert einen potentialfreien Kontakt.
+    "An" = Pin als Ausgang auf LOW (zieht die Leitung/kurzschliesst sie),
+    "Aus" = Pin als Eingang (hochohmig/losgelassen). So wird nie aktiv
+    Spannung auf die externe Leitung gelegt - sicher fuer Eingaenge wie
+    den "Volt Free"-Trigger-Eingang des Raytec-Strahlers.
+
+    open_drain=False: normaler Push-Pull-Ausgang (z.B. fuer ein Relais-
+    oder MOSFET-Modul mit eigenem Steuersignal-Eingang)."""
+
+    def __init__(self, pin_num, active_high=True, timer_id=-1, open_drain=True):
+        self.pin_num = pin_num
+        self.open_drain = open_drain
         self.active_high = active_high
+        self.pin = Pin(pin_num, Pin.IN) if open_drain else Pin(pin_num, Pin.OUT)
         self.timer = Timer(timer_id)
         self.on_ms = 100
         self.off_ms = 50
@@ -17,7 +27,14 @@ class IRStrahler:
         self._set(False)
 
     def _set(self, on):
-        self.pin.value(on if self.active_high else not on)
+        if self.open_drain:
+            if on:
+                self.pin.init(Pin.OUT)
+                self.pin.value(0)
+            else:
+                self.pin.init(Pin.IN)
+        else:
+            self.pin.value(on if self.active_high else not on)
 
     def _tick(self, t):
         self.state = not self.state
