@@ -3,7 +3,7 @@ import time
 
 TX_PIN = 18
 CARRIER_FREQ = 38000
-CARRIER_DUTY_U16 = 21845  # ~33% Tastgrad, ueblich fuer IR-Fernbedienungen
+CARRIER_DUTY_U16 = 45000  # ~69% Tastgrad, fuer mehr Sendeleistung ohne zusaetzliche Bauteile
 
 
 def send(durations, pin_num=TX_PIN, carrier_freq=CARRIER_FREQ):

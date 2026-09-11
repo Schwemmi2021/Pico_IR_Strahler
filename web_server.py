@@ -5,16 +5,66 @@ import ujson
 from ir_send import send_by_name
 from ir_codes import list_codes
 from ir_strahler import IRStrahler
+from ir_learn import capture as rx_capture
 
 WIFI_SSID = "DEIN_WLAN_NAME"
 WIFI_PASSWORD = "DEIN_WLAN_PASSWORT"
 
-STRAHLER_PIN = 16  # anpassen an das GPIO, mit dem das Relais/MOSFET verbunden ist
+STRAHLER_PIN = 12  # anpassen an das GPIO, mit dem das Relais/MOSFET verbunden ist
 CONFIG_FILE = "/config.json"
 
 strahler = IRStrahler(STRAHLER_PIN)
 
 LAST_FILE = "/last_sent.json"
+LAST_RX_FILE = "/last_rx.json"
+
+
+def save_last_rx(durations):
+    with open(LAST_RX_FILE, "w") as f:
+        ujson.dump({"count": len(durations) if durations else 0, "durations": durations or []}, f)
+
+
+def load_last_rx():
+    try:
+        with open(LAST_RX_FILE) as f:
+            return ujson.load(f)
+    except OSError:
+        return {"count": 0, "durations": []}
+
+
+def send_and_capture(name):
+    from machine import Pin
+    import time as _time
+    from ir_codes import load_codes
+
+    codes = load_codes()
+    if name not in codes:
+        raise ValueError("Unbekannter Code: " + name)
+
+    Pin(15, Pin.OUT).value(1)
+    edges = []
+
+    def _irq(p):
+        if len(edges) < 500:
+            edges.append(_time.ticks_us())
+
+    rx_pin = Pin(14, Pin.IN)
+    rx_pin.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, handler=_irq)
+
+    status_led = Pin(13, Pin.OUT)
+    status_led.value(1)
+    _time.sleep_ms(30)
+    send_by_name(name)
+    status_led.value(0)
+    _time.sleep_ms(150)
+
+    rx_pin.irq(handler=None)
+
+    durations = None
+    if len(edges) >= 2:
+        durations = [_time.ticks_diff(edges[i + 1], edges[i]) for i in range(len(edges) - 1)]
+    save_last_rx(durations)
+    return durations
 
 
 def save_last(name):
@@ -343,13 +393,18 @@ def handle_request(method, path, params, body):
     if path.startswith("/api/send/") and method == "POST":
         name = path[len("/api/send/"):]
         try:
-            send_by_name(name)
+            durations = send_and_capture(name)
             save_last(name)
-            return 200, "application/json", '{"ok":true}'
+            return 200, "application/json", ujson.dumps({
+                "ok": True,
+                "rx_count": len(durations) if durations else 0,
+            })
         except Exception as e:
             return 500, "application/json", ujson.dumps({"ok": False, "error": str(e)})
     if path == "/api/last" and method == "GET":
         return 200, "application/json", ujson.dumps(load_last())
+    if path == "/api/last_rx" and method == "GET":
+        return 200, "application/json", ujson.dumps(load_last_rx())
     if path == "/api/strahler/start" and method == "POST":
         on_ms = int(params.get("on_ms", 100))
         off_ms = int(params.get("off_ms", 50))
