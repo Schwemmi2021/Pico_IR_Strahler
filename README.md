@@ -16,14 +16,19 @@ und stellt das Ganze ueber eine WLAN-Weboberflaeche bereit.
 | IR-Sende-LED Vorwiderstand | GP18 → LED | **100 Ω** (Bereich 100–220 Ω; kleiner = mehr Strom/Reichweite, aber GPIO-Strombegrenzung beachten) |
 | IR-Sende-LED Kathode | → GND | direkt |
 | Status-LED (Lern-/Sende-Anzeige) | GP13 | LED + Vorwiderstand ~220 Ω → GND |
-| Strahler-Telemetrie-Relais (Open-Drain) | GP12 * | siehe Warnung unten |
+| Strahler-Telemetrie-Relais (Open-Drain) | **GP17** | Orange direkt an GP17, kein Widerstand (Open-Drain-Software) |
 
-\* **Bekanntes offenes Problem:** GP12 hat sich im Test nicht sauber auf LOW
-ziehen lassen (Multimeter zeigte weiterhin ~2,4–3,1V statt ~0V, auch isoliert
-ohne Strahler-Anschluss gemessen). Ursache nicht abschliessend geklaert
-(moeglicher Pin-Defekt). Als naechster Versuch empfohlen: auf **GP17**
-wechseln (dieser Pin hat sich den ganzen Abend als Ausgang zuverlaessig
-verhalten, u.a. als Stromversorgung fuer die Empfaenger-Diode).
+**Hinweis:** GP12 wurde zuerst verwendet, liess sich aber nicht sauber auf
+LOW ziehen (moeglicher Pin-Defekt) — **GP17 funktioniert zuverlaessig** und
+ist die aktuelle, getestete Konfiguration.
+
+**Wichtig — vor dem ersten Pulsen einmalig "TEL" senden:** Die Taste `tel`
+("Selects Telemetry Input") muss einmal gesendet werden, damit der
+Telemetrie-Eingang tatsaechlich die Beleuchtung steuert. Ohne das hat das
+Relais/GPIO keine sichtbare Wirkung, obwohl die Spannung am Eingang korrekt
+schaltet. Reihenfolge: `photocell_off` (Photocell deaktivieren) → `tel`
+(Telemetrie-Eingang auswaehlen) → danach schaltet `IRStrahler(17)`
+zuverlaessig die Beleuchtung.
 
 ## Schaltplan
 
@@ -33,7 +38,7 @@ graph LR
         GP14["GP14"]
         GP18["GP18"]
         GP13["GP13"]
-        GP12["GP12 (Relais, siehe Warnung)"]
+        GP17["GP17 (Relais)"]
         GND["GND"]
         V3["3V3"]
     end
@@ -50,7 +55,7 @@ graph LR
     LED2A --> LED2K["Status-LED Kathode"]
     LED2K --> GND
 
-    GP12 -.->|"Open-Drain: LOW=an, hochohmig=aus"| ORANGE["Orange (Strahler Telemetrie +)"]
+    GP17 -.->|"Open-Drain: LOW=an, hochohmig=aus"| ORANGE["Orange (Strahler Telemetrie +)"]
     GND -.->|gemeinsame Masse| PURPLE["Purple (Strahler Telemetrie GND)"]
 
     ORANGE -.- STRAHLER["Raytec VARIO2<br/>Telemetry Input"]
@@ -112,14 +117,17 @@ Laut Raytec "Combined Installation Guide" (0330-D-00018-Rev4), Step 4:
 - Werksdefault: Telemetry Input geschlossen/gebrueckt (Photocell steuert
   automatisch Tag/Nacht)
 - **Volt-Free-Modus: Kurzschluss (Orange↔Purple) = Licht an**
-- Damit die Telemetrie den Strahler ueberhaupt direkt steuert, muss auf
-  der echten Fernbedienung **"Photocell Disable"** (durchgestrichenes
-  Mond-Symbol, PHOTOCELL-Spalte, 4. Reihe) aktiviert sein — sonst hat das
-  Relais/GPIO keine Wirkung (Photocell hat sonst Vorrang). Bestaetigung:
-  rechte Status-LED am Strahler leuchtet kurz **durchgehend Amber** bei
-  gueltigem Fernbedienungs-Befehl.
-- Verkabelung: **Purple → Pico GND**, **Orange → Relais-GPIO** (aktuell
-  GP12, siehe Warnung oben)
+- Damit die Telemetrie den Strahler ueberhaupt direkt steuert, muessen
+  **zwei** Tasten einmalig gesendet werden (per echter Fernbedienung oder
+  per `send_by_name`):
+  1. **`photocell_off`** (Photocell Disable, durchgestrichenes Mond-Symbol,
+     PHOTOCELL-Spalte 4. Reihe) — sonst hat das Photocell Vorrang
+  2. **`tel`** (Selects Telemetry Input) — ohne diesen Schritt schaltet
+     die Spannung am Eingang zwar korrekt (mit Multimeter messbar), der
+     Strahler reagiert aber trotzdem nicht sichtbar
+  Bestaetigung fuer Schritt 1: rechte Status-LED am Strahler leuchtet kurz
+  **durchgehend Amber** bei gueltigem Fernbedienungs-Befehl.
+- Verkabelung: **Purple → Pico GND**, **Orange → GP17**
 - Ansteuerung im Code ist **Open-Drain** (siehe `ir_strahler.py`):
   "An" = Pin als Ausgang auf LOW (simuliert Kurzschluss), "Aus" = Pin als
   hochohmiger Eingang (keine aktive Spannung auf die Leitung). Dadurch
@@ -245,8 +253,10 @@ s.stop()
   Signal), nicht als durchgehender Datenstrom, den man nachbauen muesste.
   Nicht abschliessend verifiziert — **`reset` daher mit Vorsicht behandeln**,
   da ein echter Reset alle Strahler-Einstellungen zuruecksetzt.
-- **Relais/GP12**: siehe Hardware-Tabelle oben, Wechsel auf GP17 empfohlen
-  und noch zu testen.
+- ~~Relais/GP12 unklares Verhalten~~ — **geloest**: Wechsel auf GP17
+  behebt das Problem, und `tel` muss vor dem ersten Pulsen einmalig
+  gesendet werden (siehe Relais-Verkabelung oben). Live am echten Strahler
+  mit Handykamera bestaetigt funktionsfaehig.
 - Andere Tasten (Photocell-Stufen, Timer-Stufen, Tel/Dim, Lock, Status,
   Reset) wurden eingelernt, aber noch nicht einzeln gegen den echten
   Strahler verifiziert. Die Timer-Namen (`timer_full/75/50/25/off`)
