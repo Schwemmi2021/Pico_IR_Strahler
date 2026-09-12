@@ -122,7 +122,7 @@ HTML_PAGE = """<!DOCTYPE html>
   .last-sent{box-shadow:0 0 0 3px #2e7d32, inset 0 1px 2px rgba(255,255,255,.8) !important}
   .last-sent::before{content:'';position:absolute;top:-3px;right:-3px;width:12px;height:12px;border-radius:50%;background:#2e7d32;border:2px solid #f5f5f0;z-index:4}
   .pill.last-sent{box-shadow:0 0 0 3px #2e7d32 !important}
-  .sbtn.active-state{box-shadow:0 0 0 3px #2e7d32 !important}
+  .sbtn.active-state,.btn.active-state{box-shadow:0 0 0 3px #2e7d32 !important}
   .last-label{text-align:center;font-size:11px;color:#2e7d32;font-weight:700;margin-top:8px;min-height:14px}
   .telemetry{border:2px solid #1a1a1a;border-radius:22px;padding:10px 12px 14px;margin-bottom:18px}
   .telemetry-label{text-align:center;font-size:11px;font-weight:700;letter-spacing:.05em;margin-bottom:8px;color:#222}
@@ -289,18 +289,21 @@ HTML_PAGE = """<!DOCTYPE html>
     <label>An (ms)</label><input id="on_ms" value="100" type="number">
     <label>Aus (ms)</label><input id="off_ms" value="50" type="number">
   </div>
-  <div class="row">
-    <button class="sbtn" id="btnStart" onclick="startStrahler()">Start (pulsen)</button>
-    <button class="sbtn stop" id="btnStop" onclick="stopStrahler()">Stop</button>
+
+  <div class="remote" style="max-width:260px;margin:16px auto;padding:16px 12px 18px">
+    <div class="headers" style="grid-template-columns:repeat(2,1fr)"><div>PULS</div><div>DAUER</div></div>
+    <div class="grid" style="grid-template-columns:repeat(2,1fr)">
+      <div class="btn" id="btnStart" onclick="startStrahler()" style="font-size:11px">Start</div>
+      <div class="btn" id="btnOn" onclick="strahlerOn()" style="font-size:11px">An</div>
+      <div class="btn" id="btnStop" onclick="stopStrahler()" style="font-size:11px">Stop</div>
+      <div class="btn" id="btnOff" onclick="strahlerOff()" style="font-size:11px">Aus</div>
+    </div>
+    <div class="bottom-row" style="grid-template-columns:1fr">
+      <div class="btn" style="border-radius:20px;aspect-ratio:auto;padding:10px 0;font-size:10px" onclick="restoreAuto()">AUTOMATIK</div>
+    </div>
+    <div class="brand"><span class="ray">BERNARD</span><span class="tec">TEC</span></div>
   </div>
   <p id="status"></p>
-  <div class="row">
-    <button class="sbtn" style="background:#2e7d32;color:#fff" onclick="strahlerOn()">Dauerhaft An</button>
-    <button class="sbtn" style="background:#333;color:#fff" onclick="strahlerOff()">Dauerhaft Aus</button>
-  </div>
-  <div class="row">
-    <button class="sbtn" style="background:#666;color:#fff" onclick="restoreAuto()">Automatik wiederherstellen (Photocell)</button>
-  </div>
   <p id="restoreStatus" style="font-size:12px;color:#666"></p>
 </div>
 
@@ -438,6 +441,8 @@ function loadStrahlerStatus(){
     badge.className = 'state-badge ' + (s.running ? 'on' : 'off');
     document.getElementById('btnStart').classList.toggle('active-state', s.running === true);
     document.getElementById('btnStop').classList.toggle('active-state', !s.running);
+    document.getElementById('btnOn').classList.toggle('active-state', s.running === 'on');
+    document.getElementById('btnOff').classList.toggle('active-state', !s.running);
     if(s.running === true){
       document.getElementById('on_ms').value = s.on_ms;
       document.getElementById('off_ms').value = s.off_ms;
