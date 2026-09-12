@@ -288,8 +288,11 @@ HTML_PAGE = """<!DOCTYPE html>
         GPIO: <b id="strahlerPin">-</b> &nbsp;|&nbsp; Status: <span id="strahlerState" class="state-badge">-</span>
       </div>
       <div class="row" style="justify-content:center;margin-bottom:0">
-        <label>An (ms)</label><input id="on_ms" value="100" type="number">
-        <label>Aus (ms)</label><input id="off_ms" value="50" type="number">
+        <label>An (ms)</label><input id="on_ms" value="100" type="number" oninput="scheduleTimingApply()">
+        <label>Aus (ms)</label><input id="off_ms" value="50" type="number" oninput="scheduleTimingApply()">
+      </div>
+      <div class="row" style="justify-content:center;margin-bottom:0">
+        <span id="timingApplyLabel" style="font-size:11px;color:#2e7d32;font-weight:600"></span>
       </div>
     </div>
     <div class="headers" style="grid-template-columns:repeat(2,1fr)"><div>PULS</div><div>DAUER</div></div>
@@ -426,17 +429,33 @@ setInterval(loadStrahlerStatus, 5000);
 let strahlerPulsing = false;
 let lastPushedOn = null;
 let lastPushedOff = null;
-function checkTimingChange(){
+let applyCountdown = null;
+function scheduleTimingApply(){
   if(!strahlerPulsing) return;
   const on_ms = document.getElementById('on_ms').value;
   const off_ms = document.getElementById('off_ms').value;
-  if(on_ms != lastPushedOn || off_ms != lastPushedOff){
-    lastPushedOn = on_ms;
-    lastPushedOff = off_ms;
-    startStrahler();
+  const label = document.getElementById('timingApplyLabel');
+  if(on_ms == lastPushedOn && off_ms == lastPushedOff){
+    if(applyCountdown){ clearInterval(applyCountdown); applyCountdown = null; label.innerText=''; }
+    return;
   }
+  if(applyCountdown) clearInterval(applyCountdown);
+  let remaining = 10;
+  label.innerText = 'wird in ' + remaining + 's uebernommen...';
+  applyCountdown = setInterval(()=>{
+    remaining--;
+    if(remaining <= 0){
+      clearInterval(applyCountdown);
+      applyCountdown = null;
+      label.innerText = '';
+      lastPushedOn = document.getElementById('on_ms').value;
+      lastPushedOff = document.getElementById('off_ms').value;
+      startStrahler();
+    } else {
+      label.innerText = 'wird in ' + remaining + 's uebernommen...';
+    }
+  }, 1000);
 }
-setInterval(checkTimingChange, 10000);
 function loadConfig(){
   fetch('/api/config').then(r=>r.json()).then(cfg=>{
     document.getElementById('standort').value = cfg.standort || '';
