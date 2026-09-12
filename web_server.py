@@ -293,9 +293,6 @@ HTML_PAGE = """<!DOCTYPE html>
         <label>An (ms)</label><input id="on_ms" value="100" type="number" oninput="scheduleTimingApply()">
         <label>Aus (ms)</label><input id="off_ms" value="50" type="number" oninput="scheduleTimingApply()">
       </div>
-      <div class="row" style="justify-content:center;margin-bottom:0">
-        <span id="timingApplyLabel" style="font-size:11px;color:#2e7d32;font-weight:600"></span>
-      </div>
     </div>
     <div class="headers" style="grid-template-columns:repeat(2,1fr)"><div>PULS</div><div>DAUER</div></div>
     <div class="grid" style="grid-template-columns:repeat(2,1fr)">
@@ -432,32 +429,43 @@ let strahlerPulsing = false;
 let lastPushedOn = null;
 let lastPushedOff = null;
 let applyCountdown = null;
+const btnStartOriginalHtml = 'Start';
 function scheduleTimingApply(){
   if(!strahlerPulsing) return;
   const on_ms = document.getElementById('on_ms').value;
   const off_ms = document.getElementById('off_ms').value;
-  const label = document.getElementById('timingApplyLabel');
   const btnStart = document.getElementById('btnStart');
   if(on_ms == lastPushedOn && off_ms == lastPushedOff){
-    if(applyCountdown){ clearInterval(applyCountdown); applyCountdown = null; label.innerText=''; btnStart.classList.remove('pending-blink'); }
+    if(applyCountdown){
+      clearInterval(applyCountdown);
+      applyCountdown = null;
+      btnStart.classList.remove('pending-blink');
+      btnStart.innerText = btnStartOriginalHtml;
+      btnStart.style.fontSize = '';
+      btnStart.style.fontWeight = '';
+    }
     return;
   }
   if(applyCountdown) clearInterval(applyCountdown);
   let remaining = 10;
-  label.innerText = 'wird in ' + remaining + 's uebernommen...';
+  btnStart.innerText = String(remaining);
+  btnStart.style.fontSize = '24px';
+  btnStart.style.fontWeight = '800';
   btnStart.classList.add('pending-blink');
   applyCountdown = setInterval(()=>{
     remaining--;
     if(remaining <= 0){
       clearInterval(applyCountdown);
       applyCountdown = null;
-      label.innerText = '';
       btnStart.classList.remove('pending-blink');
+      btnStart.innerText = btnStartOriginalHtml;
+      btnStart.style.fontSize = '';
+      btnStart.style.fontWeight = '';
       lastPushedOn = document.getElementById('on_ms').value;
       lastPushedOff = document.getElementById('off_ms').value;
       startStrahler();
     } else {
-      label.innerText = 'wird in ' + remaining + 's uebernommen...';
+      btnStart.innerText = String(remaining);
     }
   }, 1000);
 }
