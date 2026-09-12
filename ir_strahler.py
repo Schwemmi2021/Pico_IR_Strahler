@@ -56,3 +56,17 @@ class IRStrahler:
         self.timer.deinit()
         self._set(False)
         self.running = False
+
+    def on(self):
+        """Dauerhaft an, ohne Puls-Timer (fuer durchgehendes Leuchten)."""
+        self.timer.deinit()
+        self._set(True)
+        self.state = True
+        self.running = "on"
+
+    def off(self):
+        """Dauerhaft aus (Kontakt offen)."""
+        self.timer.deinit()
+        self._set(False)
+        self.state = False
+        self.running = False

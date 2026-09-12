@@ -290,10 +290,14 @@ HTML_PAGE = """<!DOCTYPE html>
     <label>Aus (ms)</label><input id="off_ms" value="50" type="number">
   </div>
   <div class="row">
-    <button class="sbtn" id="btnStart" onclick="startStrahler()">Start</button>
+    <button class="sbtn" id="btnStart" onclick="startStrahler()">Start (pulsen)</button>
     <button class="sbtn stop" id="btnStop" onclick="stopStrahler()">Stop</button>
   </div>
   <p id="status"></p>
+  <div class="row">
+    <button class="sbtn" style="background:#2e7d32;color:#fff" onclick="strahlerOn()">Dauerhaft An</button>
+    <button class="sbtn" style="background:#333;color:#fff" onclick="strahlerOff()">Dauerhaft Aus</button>
+  </div>
   <div class="row">
     <button class="sbtn" style="background:#666;color:#fff" onclick="restoreAuto()">Automatik wiederherstellen (Photocell)</button>
   </div>
@@ -408,16 +412,33 @@ function restoreAuto(){
       loadLast();
     });
 }
+function strahlerOn(){
+  document.getElementById('status').innerText='sende photocell_off + tel, dann Dauerhaft An...';
+  fetch('/api/strahler/on', {method:'POST'})
+    .then(r=>r.json())
+    .then(r=>{
+      document.getElementById('status').innerText = r.ok ? 'dauerhaft an' : 'Fehler: '+r.error;
+      loadStrahlerStatus();
+      loadLast();
+    });
+}
+function strahlerOff(){
+  fetch('/api/strahler/off', {method:'POST'})
+    .then(()=>{
+      document.getElementById('status').innerText='dauerhaft aus';
+      loadStrahlerStatus();
+    });
+}
 function loadStrahlerStatus(){
   fetch('/api/strahler/status').then(r=>r.json()).then(s=>{
     document.getElementById('strahlerPin').innerText = 'GP' + s.pin;
     document.getElementById('strahlerPin2').innerText = 'GP' + s.pin;
     const badge = document.getElementById('strahlerState');
-    badge.innerText = s.running ? 'AN' : 'AUS';
+    badge.innerText = s.running === true ? 'PULST' : (s.running ? 'AN' : 'AUS');
     badge.className = 'state-badge ' + (s.running ? 'on' : 'off');
-    document.getElementById('btnStart').classList.toggle('active-state', s.running);
+    document.getElementById('btnStart').classList.toggle('active-state', s.running === true);
     document.getElementById('btnStop').classList.toggle('active-state', !s.running);
-    if(s.running){
+    if(s.running === true){
       document.getElementById('on_ms').value = s.on_ms;
       document.getElementById('off_ms').value = s.off_ms;
     }
@@ -545,6 +566,18 @@ def handle_request(method, path, params, body):
         return 200, "application/json", '{"ok":true}'
     if path == "/api/strahler/stop" and method == "POST":
         strahler.stop()
+        return 200, "application/json", '{"ok":true}'
+    if path == "/api/strahler/on" and method == "POST":
+        try:
+            send_by_name("photocell_off")
+            send_by_name("tel")
+            save_last("tel")
+        except Exception as e:
+            return 500, "application/json", ujson.dumps({"ok": False, "error": "Vorbereitung (photocell_off/tel) fehlgeschlagen: " + str(e)})
+        strahler.on()
+        return 200, "application/json", '{"ok":true}'
+    if path == "/api/strahler/off" and method == "POST":
+        strahler.off()
         return 200, "application/json", '{"ok":true}'
     if path == "/api/strahler/restore_auto" and method == "POST":
         try:
