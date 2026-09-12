@@ -9,9 +9,9 @@ und stellt das Ganze ueber eine WLAN-Weboberflaeche bereit.
 
 | Funktion | GPIO | Bauteil / Wert |
 |---|---|---|
-| IR-Empfaenger Signal | GP14 | Fotodiode (Anode) — siehe Hinweis unten |
-| IR-Empfaenger Stromversorgung | GP15 | Fotodiode (Kathode), Software-Pin dauerhaft HIGH |
-| IR-Empfaenger Pull-Down | GP14 → GND | Externer Widerstand **10 kΩ** (empfindlicher: 4,7 kΩ; NICHT ueber 47kΩ, sonst Dunkel-Leckstrom-Fehltrigger) |
+| IR-Empfaenger Signal | GP14 | KY-022-Modul (VS1838B/TL1838), Pin "Y" — kein Widerstand noetig |
+| IR-Empfaenger Stromversorgung | 3V3 | KY-022-Modul, Pin "R" |
+| IR-Empfaenger Masse | GND | KY-022-Modul, Pin "G" |
 | IR-Sende-LED Signal | GP18 | IR-LED (Anode) ueber Vorwiderstand |
 | IR-Sende-LED Vorwiderstand | GP18 → LED | **100 Ω** (Bereich 100–220 Ω; kleiner = mehr Strom/Reichweite, aber GPIO-Strombegrenzung beachten) |
 | IR-Sende-LED Kathode | → GND | direkt |
@@ -31,7 +31,6 @@ verhalten, u.a. als Stromversorgung fuer die Empfaenger-Diode).
 graph LR
     subgraph PICO["Raspberry Pi Pico 2 W"]
         GP14["GP14"]
-        GP15["GP15"]
         GP18["GP18"]
         GP13["GP13"]
         GP12["GP12 (Relais, siehe Warnung)"]
@@ -39,10 +38,9 @@ graph LR
         V3["3V3"]
     end
 
-    GP15 -->|dauerhaft HIGH| PD_K["Fotodiode Kathode (langes Bein)"]
-    PD_K --- PD_A["Fotodiode Anode (kurzes Bein)"]
-    PD_A --> GP14
-    GP14 ---|"10kΩ Pull-Down"| GND
+    V3 --> TSOP_R["KY-022 Pin R (VCC)"]
+    GND --> TSOP_G["KY-022 Pin G (GND)"]
+    TSOP_Y["KY-022 Pin Y (Signal)"] --> GP14
 
     GP18 -->|"100Ω Vorwiderstand"| LED1A["IR-Sende-LED Anode"]
     LED1A --> LED1K["IR-Sende-LED Kathode"]
@@ -59,36 +57,24 @@ graph LR
     PURPLE -.- STRAHLER
 ```
 
-**Empfaenger-Upgrade (empfohlen, TSOP38238/VS1838B statt Fotodiode):**
+### IR-Empfaenger: KY-022-Modul (VS1838B/TL1838)
 
-```mermaid
-graph LR
-    subgraph PICO2["Raspberry Pi Pico 2 W"]
-        V3b["3V3"]
-        GNDb["GND"]
-        GP14b["GP14"]
-    end
-    V3b --> TSOP_VCC["TSOP38238 VCC"]
-    GNDb --> TSOP_GND["TSOP38238 GND"]
-    TSOP_OUT["TSOP38238 OUT"] --> GP14b
-```
+Urspruenglich wurde mit einer blanken Fotodiode + 10kΩ-Pull-Down
+experimentiert — das lieferte kein sauber demoduliertes Signal (kein
+AGC, keine 38kHz-Filterung, reagierte auf jedes Umgebungslicht) und
+fuehrte bei einer Taste (`power_5`) zu einer durchgehend verrauschten,
+unbrauchbaren Aufzeichnung. **Seit dem Umstieg auf das KY-022-Modul
+(VS1838B-Chip) ist dieses Problem behoben** — alle 19 Tasten liessen sich
+danach sauber und konsistent einlernen.
 
-### Wichtiger Hinweis zur Fotodiode (Empfaenger)
+Pin-Beschriftung auf dem KY-022 (kann je nach Charge variieren, im
+Zweifel Aufdruck pruefen): **G**=GND, **R**=VCC (3.3V), **Y**=Signal
+(direkt an GPIO, kein Vorwiderstand noetig).
 
-Die im Testaufbau verwendete Fotodiode hat eine **umgekehrte Polung**
-gegenueber der ueblichen LED-Konvention: **kurzes Beinchen = Anode,
-langes Beinchen = Kathode** (per Multimeter-Diodentest verifiziert). Bei
-einer neuen/anderen Fotodiode immer zuerst mit dem Multimeter im
-Dioden-Testmodus pruefen, welches Beinchen tatsaechlich die Anode ist,
-bevor verkabelt wird.
-
-**Empfohlenes Upgrade:** Die blanke Fotodiode liefert kein sauber
-demoduliertes Signal (kein AGC, keine 38kHz-Filterung, reagiert auf jedes
-Umgebungslicht) — das fuehrte im Test zu einer Taste (`power_5`) mit
-durchgehend verrauschter Aufzeichnung. Empfehlung: **TSOP38238 /
-VS1838B / TL1838** (38kHz-IR-Empfaengermodul, 3 Pins: VCC/GND/OUT,
-kein externer Widerstand noetig). OUT direkt an einen GPIO (z.B. weiterhin
-GP14), VCC an 3.3V, GND an GND.
+**Hinweis:** Das Modul ist deutlich empfindlicher als eine blanke
+Fotodiode — bei zu geringem Abstand (wenige cm) kann es zu Fehlmessungen
+kommen (AGC-Uebersteuerung). Ca. **20–30 cm Abstand** zur Fernbedienung
+funktioniert zuverlaessig.
 
 ### GPIO-Identifikation — Lessons Learned
 
@@ -244,12 +230,9 @@ s.stop()
 
 ## Bekannte offene Punkte
 
-- **`power_5`**: Aufzeichnung liefert konsistent ein anderes, kurzimpulsiges
-  Muster als `power_1`–`power_4` (die sauber und funktionsfaehig sind).
-  Vermutlich Kontaktproblem an der Fernbedienungs-Taste selbst, nicht am
-  Empfaenger — liess sich mit blosser Fotodiode nicht zweifelsfrei klaeren.
-  Mit TSOP-Modul sollte sich das Signal zumindest sauber genug aufzeichnen
-  lassen, um die Ursache (Prellen vs. echtes anderes Timing) zu bestimmen.
+- ~~`power_5` liefert verrauschte Aufzeichnung~~ — **behoben** durch Umstieg
+  auf das KY-022-Empfaengermodul. Alle 19 Tasten wurden damit neu und
+  sauber eingelernt (`codes.json` aktuell).
 - **Relais/GP12**: siehe Hardware-Tabelle oben, Wechsel auf GP17 empfohlen
   und noch zu testen.
 - Andere Tasten (Photocell-Stufen, Timer-Stufen, Tel/Dim, Lock, Status,
