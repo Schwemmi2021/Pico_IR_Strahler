@@ -298,13 +298,8 @@ HTML_PAGE = """<!DOCTYPE html>
       <div class="btn" id="btnStop" onclick="stopStrahler()" style="font-size:11px">Stop</div>
       <div class="btn" id="btnOff" onclick="strahlerOff()" style="font-size:11px">Aus</div>
     </div>
-    <div class="bottom-row" style="grid-template-columns:1fr">
-      <div class="btn" style="border-radius:20px;aspect-ratio:auto;padding:10px 0;font-size:10px" onclick="restoreAuto()">AUTOMATIK</div>
-    </div>
     <div class="brand"><span class="ray">BERNARD</span><span class="tec">TEC</span></div>
   </div>
-  <p id="status"></p>
-  <p id="restoreStatus" style="font-size:12px;color:#666"></p>
 </div>
 
 <div class="btn-tooltip" id="btnTooltip"></div>
@@ -384,53 +379,28 @@ function loadLast(){
 function startStrahler(){
   const on_ms = document.getElementById('on_ms').value;
   const off_ms = document.getElementById('off_ms').value;
-  document.getElementById('status').innerText='sende photocell_off + tel, dann Start...';
   fetch('/api/strahler/start?on_ms='+on_ms+'&off_ms='+off_ms, {method:'POST'})
     .then(r=>r.json())
     .then(r=>{
-      if(r.ok){
-        document.getElementById('status').innerText='laeuft: '+on_ms+'ms an / '+off_ms+'ms aus';
-      } else {
-        document.getElementById('status').innerText='Fehler: '+r.error;
-      }
+      if(!r.ok) alert('Fehler: '+r.error);
       loadStrahlerStatus();
       loadLast();
     });
 }
 function stopStrahler(){
-  fetch('/api/strahler/stop', {method:'POST'})
-    .then(()=>{
-      document.getElementById('status').innerText='gestoppt';
-      loadStrahlerStatus();
-    });
-}
-function restoreAuto(){
-  document.getElementById('restoreStatus').innerText='sende photocell_1...';
-  fetch('/api/strahler/restore_auto', {method:'POST'})
-    .then(r=>r.json())
-    .then(r=>{
-      document.getElementById('restoreStatus').innerText = r.ok
-        ? 'Automatik wiederhergestellt (photocell_1 gesendet)'
-        : 'Fehler: '+r.error;
-      loadLast();
-    });
+  fetch('/api/strahler/stop', {method:'POST'}).then(()=>loadStrahlerStatus());
 }
 function strahlerOn(){
-  document.getElementById('status').innerText='sende photocell_off + tel, dann Dauerhaft An...';
   fetch('/api/strahler/on', {method:'POST'})
     .then(r=>r.json())
     .then(r=>{
-      document.getElementById('status').innerText = r.ok ? 'dauerhaft an' : 'Fehler: '+r.error;
+      if(!r.ok) alert('Fehler: '+r.error);
       loadStrahlerStatus();
       loadLast();
     });
 }
 function strahlerOff(){
-  fetch('/api/strahler/off', {method:'POST'})
-    .then(()=>{
-      document.getElementById('status').innerText='dauerhaft aus';
-      loadStrahlerStatus();
-    });
+  fetch('/api/strahler/off', {method:'POST'}).then(()=>loadStrahlerStatus());
 }
 function loadStrahlerStatus(){
   fetch('/api/strahler/status').then(r=>r.json()).then(s=>{
@@ -583,13 +553,6 @@ def handle_request(method, path, params, body):
         return 200, "application/json", '{"ok":true}'
     if path == "/api/strahler/off" and method == "POST":
         strahler.off()
-        return 200, "application/json", '{"ok":true}'
-    if path == "/api/strahler/restore_auto" and method == "POST":
-        try:
-            send_by_name("photocell_1")
-            save_last("photocell_1")
-        except Exception as e:
-            return 500, "application/json", ujson.dumps({"ok": False, "error": str(e)})
         return 200, "application/json", '{"ok":true}'
     if path == "/api/strahler/status" and method == "GET":
         return 200, "application/json", ujson.dumps({
