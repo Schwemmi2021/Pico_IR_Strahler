@@ -7,8 +7,13 @@ from ir_codes import list_codes
 from ir_strahler import IRStrahler
 from ir_learn import capture as rx_capture
 
-WIFI_SSID = "DEIN_WLAN_NAME"
-WIFI_PASSWORD = "DEIN_WLAN_PASSWORT"
+WIFI_CONFIG_FILE = "/wifi_config.json"
+
+
+def load_wifi_config():
+    with open(WIFI_CONFIG_FILE) as f:
+        cfg = ujson.load(f)
+    return cfg["ssid"], cfg["password"]
 
 STRAHLER_PIN = 12  # anpassen an das GPIO, mit dem das Relais/MOSFET verbunden ist
 CONFIG_FILE = "/config.json"
@@ -363,7 +368,9 @@ loadStrahlerStatus();
 """
 
 
-def connect_wifi(ssid=WIFI_SSID, password=WIFI_PASSWORD, timeout_s=20):
+def connect_wifi(ssid=None, password=None, timeout_s=20):
+    if ssid is None or password is None:
+        ssid, password = load_wifi_config()
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
     wlan.connect(ssid, password)
