@@ -294,10 +294,10 @@ HTML_PAGE = """<!DOCTYPE html>
     </div>
     <div class="headers" style="grid-template-columns:repeat(2,1fr)"><div>PULS</div><div>DAUER</div></div>
     <div class="grid" style="grid-template-columns:repeat(2,1fr)">
-      <div class="btn" id="btnStart" onclick="startStrahler()" style="font-size:11px">Start</div>
-      <div class="btn" id="btnOn" onclick="strahlerOn()" style="font-size:11px">An</div>
-      <div class="btn" id="btnStop" onclick="stopStrahler()" style="font-size:11px">Stop</div>
-      <div class="btn" id="btnOff" onclick="strahlerOff()" style="font-size:11px">Aus</div>
+      <div class="btn" id="btnStart" onclick="startStrahler()" style="font-size:11px" data-tooltip="Sendet einmalig photocell_off + tel, dann startet der Puls-Timer (An/Aus im eingestellten ms-Rhythmus) am Relais-GPIO.">Start</div>
+      <div class="btn" id="btnOn" onclick="strahlerOn()" style="font-size:11px" data-tooltip="Sendet einmalig photocell_off + tel, dann schaltet das Relais dauerhaft auf An (kein Pulsen, durchgehendes Leuchten).">An</div>
+      <div class="btn" id="btnStop" onclick="stopStrahler()" style="font-size:11px" data-tooltip="Stoppt den Puls-Timer und oeffnet den Relais-Kontakt (Aus).">Stop</div>
+      <div class="btn" id="btnOff" onclick="strahlerOff()" style="font-size:11px" data-tooltip="Oeffnet den Relais-Kontakt dauerhaft (Aus), ohne den Telemetrie-Modus zu aendern.">Aus</div>
     </div>
     <div class="brand"><span class="ray">BERNARD</span><span class="tec">TEC</span></div>
   </div>
@@ -463,8 +463,8 @@ const BUTTON_INFO = {
 
 let tooltipTimer = null;
 const tooltipEl = document.getElementById('btnTooltip');
-document.querySelectorAll('[data-code]').forEach(b=>{
-  const info = BUTTON_INFO[b.dataset.code];
+document.querySelectorAll('[data-code], [data-tooltip]').forEach(b=>{
+  const info = BUTTON_INFO[b.dataset.code] || b.dataset.tooltip;
   if(!info) return;
   b.addEventListener('mouseenter', (e)=>{
     tooltipTimer = setTimeout(()=>{
