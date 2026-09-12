@@ -153,6 +153,8 @@ HTML_PAGE = """<!DOCTYPE html>
   .info-icon{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#777;color:#fff;font-size:11px;font-style:italic;font-weight:700;cursor:help;position:relative;margin-left:6px;vertical-align:middle}
   .info-icon .tooltip{visibility:hidden;opacity:0;position:absolute;top:130%;left:0;width:230px;background:#222;color:#fff;font-size:11px;font-style:normal;font-weight:400;line-height:1.5;padding:10px 12px;border-radius:8px;transition:opacity .15s;z-index:10;text-align:left;box-shadow:0 4px 12px rgba(0,0,0,.3)}
   .info-icon:hover .tooltip,.info-icon:active .tooltip{visibility:visible;opacity:1}
+  .btn-tooltip{position:fixed;visibility:hidden;opacity:0;background:#222;color:#fff;font-size:12px;line-height:1.5;padding:10px 12px;border-radius:8px;max-width:220px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,.35);transition:opacity .15s;pointer-events:none}
+  .btn-tooltip.show{visibility:visible;opacity:1}
 </style></head><body>
 <div class="section" style="margin-top:0;padding-top:0;border-top:none">
   <h3>Standort</h3>
@@ -294,14 +296,62 @@ HTML_PAGE = """<!DOCTYPE html>
   <p id="status"></p>
 </div>
 
+<div class="btn-tooltip" id="btnTooltip"></div>
+
 <script>
+const HOLD_TO_SEND = {reset: 4, lock: 4};
+
+function sendCode(b){
+  b.style.filter='brightness(.7)';
+  fetch('/api/send/'+b.dataset.code, {method:'POST'})
+    .then(()=>markLast(b.dataset.code))
+    .finally(()=>setTimeout(()=>b.style.filter='',150));
+}
+
 document.querySelectorAll('[data-code]').forEach(b=>{
-  b.onclick = ()=>{
-    b.style.filter='brightness(.7)';
-    fetch('/api/send/'+b.dataset.code, {method:'POST'})
-      .then(()=>markLast(b.dataset.code))
-      .finally(()=>setTimeout(()=>b.style.filter='',150));
+  const holdSeconds = HOLD_TO_SEND[b.dataset.code];
+  if(!holdSeconds){
+    b.onclick = ()=>sendCode(b);
+    return;
+  }
+  const originalHtml = b.innerHTML;
+  let countdownTimer = null;
+  let remaining = holdSeconds;
+  const start = ()=>{
+    remaining = holdSeconds;
+    b.innerText = String(remaining);
+    b.style.background = '#c62828';
+    b.style.color = '#fff';
+    countdownTimer = setInterval(()=>{
+      remaining--;
+      if(remaining <= 0){
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+        b.innerHTML = originalHtml;
+        b.style.background = '';
+        b.style.color = '';
+        sendCode(b);
+      } else {
+        b.innerText = String(remaining);
+      }
+    }, 1000);
   };
+  const cancel = ()=>{
+    if(countdownTimer){
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+      b.innerHTML = originalHtml;
+      b.style.background = '';
+      b.style.color = '';
+    }
+  };
+  b.addEventListener('mousedown', start);
+  b.addEventListener('touchstart', (e)=>{e.preventDefault(); start();});
+  b.addEventListener('mouseup', cancel);
+  b.addEventListener('mouseleave', cancel);
+  b.addEventListener('touchend', cancel);
+  b.addEventListener('touchcancel', cancel);
+  b.oncontextmenu = (e)=>e.preventDefault();
 });
 function markLast(name){
   document.querySelectorAll('.last-sent').forEach(el=>el.classList.remove('last-sent'));
@@ -363,6 +413,48 @@ function saveConfig(){
 loadConfig();
 loadLast();
 loadStrahlerStatus();
+
+const BUTTON_INFO = {
+  power_5: "Power Select Stufe 5/5: 100% Helligkeit. Quick and easy selection of 5 accurately defined power settings.",
+  power_4: "Power Select Stufe 4/5: 80% Helligkeit.",
+  power_3: "Power Select Stufe 3/5: 60% Helligkeit.",
+  power_2: "Power Select Stufe 2/5: 40% Helligkeit.",
+  power_1: "Power Select Stufe 1/5: 20% Helligkeit.",
+  photocell_1: "Photocell Adjust Stufe 1/3: waehlt eine von 3 Lichtempfindlichkeits-Stufen fuer die automatische Tag/Nacht-Steuerung.",
+  photocell_2: "Photocell Adjust Stufe 2/3.",
+  photocell_3: "Photocell Adjust Stufe 3/3.",
+  photocell_off: "Photocell Disable: Lamp operates from telemetry input only. Der Strahler wird dann nur noch ueber den Telemetrie-Eingang (Orange/Purple) gesteuert, das eingebaute Photocell wird ignoriert.",
+  timer_full: "Timer Setting: 30 Minuten. Der Strahler bleibt nach einem Telemetrie-Trigger 30 Minuten an.",
+  timer_75: "Timer Setting: 10 Minuten.",
+  timer_50: "Timer Setting: 3 Minuten.",
+  timer_25: "Timer Setting: 1 Minute.",
+  timer_off: "Timer Disable: keine automatische Abschaltzeit nach Telemetrie-Trigger.",
+  tel: "Selects Telemetry Input (Konfigurationsfunktion fuer die Telemetrie-Leitungen).",
+  dim: "Selects dimming function on telemetry wires (aktiviert Dimm-Funktion ueber die Telemetrie-Leitungen).",
+  lock: "Disable Remote Control: sperrt die Fernbedienung, um versehentliche Aenderungen zu verhindern.",
+  status: "LED Status Indicator: schaltet die Status-LEDs am Geraet ein oder aus.",
+  reset: "Reset: stellt die Werkseinstellungen wieder her (am Original-Geraet 4 Sekunden gedrueckt halten)."
+};
+
+let tooltipTimer = null;
+const tooltipEl = document.getElementById('btnTooltip');
+document.querySelectorAll('[data-code]').forEach(b=>{
+  const info = BUTTON_INFO[b.dataset.code];
+  if(!info) return;
+  b.addEventListener('mouseenter', (e)=>{
+    tooltipTimer = setTimeout(()=>{
+      tooltipEl.innerText = info;
+      const rect = b.getBoundingClientRect();
+      tooltipEl.style.left = Math.min(rect.left, window.innerWidth - 240) + 'px';
+      tooltipEl.style.top = (rect.bottom + 6) + 'px';
+      tooltipEl.classList.add('show');
+    }, 3000);
+  });
+  b.addEventListener('mouseleave', ()=>{
+    clearTimeout(tooltipTimer);
+    tooltipEl.classList.remove('show');
+  });
+});
 </script>
 </body></html>
 """

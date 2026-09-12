@@ -230,17 +230,21 @@ s.stop()
 
 ## Bekannte offene Punkte
 
-- **`power_5` (Taste "5" bei Power) — vermutlich defekter Taster auf der
-  Fernbedienung.** Mit dem neuen KY-022-Empfaenger liefern alle anderen
-  18 Tasten jedes Mal ein sauberes, konsistentes Signal. `power_5` liefert
-  dagegen bei jedem Versuch ein anderes, unregelmaessiges Muster (teils mit
-  Pausen von mehreren Minuten zwischen Impulsen) — das deutet auf einen
-  Wackelkontakt am physischen Taster selbst hin, nicht auf ein
-  Empfaenger-/Software-Problem (das war vor dem KY-022-Umstieg noch nicht
-  sicher unterscheidbar). Die in `codes.json` gespeicherte Version ist die
-  brauchbarste von mehreren Versuchen, aber moeglicherweise nicht 100%
-  identisch mit dem echten Fernbedienungssignal — bei Verhaltensabweichung
-  am Strahler ggf. mit einer zweiten/anderen Fernbedienung neu einlernen.
+- ~~`power_5` unregelmaessiges Signal~~ — **geloest**: kurze, feste
+  Tastendruecke (statt Halten) liefern durchgehend saubere, konsistente
+  Aufzeichnungen. Alle 19 Codes wurden mit dieser Technik final neu
+  eingelernt.
+- **`reset` — 4-Sekunden-Halteregel laut Handbuch, aber nicht in der
+  Aufzeichnung sichtbar.** Das Handbuch verlangt am Original-Geraet
+  "Must be depressed for 4 seconds" fuer Reset (und fuer
+  Fernbedienung-Sperren). Beim Einlernen mit tatsaechlich 4-5 Sekunden
+  gehaltener Taste blieb die aufgezeichnete Impulszahl trotzdem kurz
+  (Groessenordnung wie ein normaler Tastendruck) — das deutet darauf hin,
+  dass die 4-Sekunden-Wartezeit **in der Fernbedienung selbst** verarbeitet
+  wird (sie sendet vermutlich erst nach Ablauf der Wartezeit ein einzelnes
+  Signal), nicht als durchgehender Datenstrom, den man nachbauen muesste.
+  Nicht abschliessend verifiziert — **`reset` daher mit Vorsicht behandeln**,
+  da ein echter Reset alle Strahler-Einstellungen zuruecksetzt.
 - **Relais/GP12**: siehe Hardware-Tabelle oben, Wechsel auf GP17 empfohlen
   und noch zu testen.
 - Andere Tasten (Photocell-Stufen, Timer-Stufen, Tel/Dim, Lock, Status,
