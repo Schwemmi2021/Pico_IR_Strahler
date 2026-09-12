@@ -273,24 +273,25 @@ HTML_PAGE = """<!DOCTYPE html>
 </div>
 
 <div class="section">
-  <h3>Strahler pulsen
-    <span class="info-icon">i<span class="tooltip">
-      <b>Verkabelung</b> (Raytec External Input, Volt Free):<br>
-      <b>Purple</b> &rarr; Pico <b>GND</b><br>
-      <b>Orange</b> &rarr; Pico <b id="strahlerPin2">-</b><br><br>
-      Open-Drain-Prinzip: "An" zieht die Leitung auf LOW (Kurzschluss-Simulation),
-      "Aus" laesst sie als hochohmigen Eingang los. Es wird nie aktiv Spannung angelegt.
-    </span></span>
-  </h3>
-  <div class="row" style="font-size:12px;color:#666">
-    Relais-GPIO: <b id="strahlerPin">-</b> &nbsp;|&nbsp; Status: <span id="strahlerState" class="state-badge">-</span>
-  </div>
-  <div class="row">
-    <label>An (ms)</label><input id="on_ms" value="100" type="number">
-    <label>Aus (ms)</label><input id="off_ms" value="50" type="number">
-  </div>
-
-  <div class="remote" style="max-width:260px;margin:16px auto;padding:16px 12px 18px">
+  <div class="remote">
+    <div class="telemetry">
+      <div class="telemetry-label">Strahler pulsen
+        <span class="info-icon">i<span class="tooltip">
+          <b>Verkabelung</b> (Raytec External Input, Volt Free):<br>
+          <b>Purple</b> &rarr; Pico <b>GND</b><br>
+          <b>Orange</b> &rarr; Pico <b id="strahlerPin2">-</b><br><br>
+          Open-Drain-Prinzip: "An" zieht die Leitung auf LOW (Kurzschluss-Simulation),
+          "Aus" laesst sie als hochohmigen Eingang los. Es wird nie aktiv Spannung angelegt.
+        </span></span>
+      </div>
+      <div class="row" style="font-size:11px;color:#666;justify-content:center">
+        GPIO: <b id="strahlerPin">-</b> &nbsp;|&nbsp; Status: <span id="strahlerState" class="state-badge">-</span>
+      </div>
+      <div class="row" style="justify-content:center;margin-bottom:0">
+        <label>An (ms)</label><input id="on_ms" value="100" type="number">
+        <label>Aus (ms)</label><input id="off_ms" value="50" type="number">
+      </div>
+    </div>
     <div class="headers" style="grid-template-columns:repeat(2,1fr)"><div>PULS</div><div>DAUER</div></div>
     <div class="grid" style="grid-template-columns:repeat(2,1fr)">
       <div class="btn" id="btnStart" onclick="startStrahler()" style="font-size:11px">Start</div>
