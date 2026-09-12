@@ -208,6 +208,35 @@ Schleife gesendet, bis alle Bytes tatsaechlich uebertragen wurden (siehe
 5. `mpremote ... reset` — Pico bootet automatisch, verbindet WLAN,
    startet Webserver auf Port 80
 
+## Weboberflaeche
+
+Die Startseite bildet die Original-Fernbedienung nach (alle 19 Tasten als
+runde Buttons, Icons per SVG, kein Emoji) und enthaelt zusaetzlich eine
+zweite, kleinere "BERNARD TEC"-Fernbedienung fuer die Strahler-Relais-
+Steuerung (GP17), im selben visuellen Stil.
+
+Features:
+- **Hover-Tooltips** (3 Sek. Verzoegerung) mit den passenden Handbuch-
+  Erklaerungen zu jeder Taste, auch fuer die Strahler-Steuerungstasten
+- **Hold-to-Confirm** fuer `reset` und `lock`: Taste 4 Sekunden gedrueckt
+  halten (Countdown-Zahl direkt im Button, roter Rahmen), erst bei 0 wird
+  gesendet — verhindert versehentliches Ausloesen
+- **"Zuletzt gesendet"-Anzeige**: gruener Rahmen an der zuletzt gesendeten
+  Taste, Label unter der Hauptfernbedienung
+- **Strahler-Fernbedienung** (BERNARD TEC): `Start`/`Stop` fuer den
+  Puls-Timer, `An`/`Aus` fuer Dauerbetrieb ohne Timer. Start/An senden
+  automatisch einmalig `photocell_off` + `tel`, damit der Telemetrie-
+  Eingang die Beleuchtung ueberhaupt steuert (siehe Relais-Verkabelung
+  oben) — das passiert nur beim UEbergang von gestoppt zu laufend, nicht
+  bei jeder Timing-Aenderung
+- **Live-Timing-Update**: Wird bei laufendem Puls `An (ms)` oder
+  `Aus (ms)` geaendert, zeigt der `Start`-Button einen 10-Sekunden-
+  Countdown (Zahl im Button, blinkender gruener Rahmen) und uebernimmt die
+  neuen Werte danach automatisch, ohne die Vorbereitungs-Befehle erneut zu
+  senden
+- **Standort/Notizen-Felder** (oberhalb der Fernbedienung), persistent in
+  `/config.json` gespeichert
+
 ## Web-API (fuer eigene Skripte/Integrationen)
 
 - `GET /` — HTML-Oberflaeche
@@ -216,9 +245,14 @@ Schleife gesendet, bis alle Bytes tatsaechlich uebertragen wurden (siehe
   Empfangs-Aufzeichnung zur Loopback-Pruefung, LED-Blitz auf GP13)
 - `GET /api/last` — zuletzt gesendete Taste + Zeitstempel
 - `GET /api/last_rx` — beim letzten Senden empfangene Rohdaten (Loopback)
-- `POST /api/strahler/start?on_ms=100&off_ms=50` — Puls starten
-- `POST /api/strahler/stop` — Puls stoppen
-- `GET /api/strahler/status` — `{running, pin, on_ms, off_ms}`
+- `POST /api/strahler/start?on_ms=100&off_ms=50` — Puls starten (sendet
+  beim allerersten Start automatisch `photocell_off` + `tel`)
+- `POST /api/strahler/stop` — Puls stoppen (Relais-Kontakt offen)
+- `POST /api/strahler/on` — Dauerhaft An, kein Puls-Timer (sendet beim
+  Uebergang von gestoppt automatisch `photocell_off` + `tel`)
+- `POST /api/strahler/off` — Dauerhaft Aus, kein Puls-Timer
+- `GET /api/strahler/status` — `{running, pin, on_ms, off_ms}` —
+  `running` ist `true` (pulsiert), `"on"` (dauerhaft an) oder `false`
 - `GET/POST /api/config` — Standort/Notizen (`{"standort": "...", "notizen": "..."}`)
 
 ## Verwendung (direkt per REPL)
@@ -231,7 +265,7 @@ from ir_send import send_by_name
 send_by_name('power_5')   # gespeicherten Code abspielen
 
 from ir_strahler import IRStrahler
-s = IRStrahler(12)         # oder 17, siehe Warnung oben
+s = IRStrahler(17)
 s.start(on_ms=100, off_ms=50)
 s.stop()
 ```
