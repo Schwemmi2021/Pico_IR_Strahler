@@ -123,6 +123,8 @@ HTML_PAGE = """<!DOCTYPE html>
   .last-sent::before{content:'';position:absolute;top:-3px;right:-3px;width:12px;height:12px;border-radius:50%;background:#2e7d32;border:2px solid #f5f5f0;z-index:4}
   .pill.last-sent{box-shadow:0 0 0 3px #2e7d32 !important}
   .sbtn.active-state,.btn.active-state{box-shadow:0 0 0 3px #2e7d32 !important}
+  @keyframes pendingBlink{0%,100%{box-shadow:0 0 0 3px #2e7d32}50%{box-shadow:0 0 0 3px transparent}}
+  .btn.pending-blink{animation:pendingBlink 0.6s infinite}
   .last-label{text-align:center;font-size:11px;color:#2e7d32;font-weight:700;margin-top:8px;min-height:14px}
   .telemetry{border:2px solid #1a1a1a;border-radius:22px;padding:10px 12px 14px;margin-bottom:18px}
   .telemetry-label{text-align:center;font-size:11px;font-weight:700;letter-spacing:.05em;margin-bottom:8px;color:#222}
@@ -435,19 +437,22 @@ function scheduleTimingApply(){
   const on_ms = document.getElementById('on_ms').value;
   const off_ms = document.getElementById('off_ms').value;
   const label = document.getElementById('timingApplyLabel');
+  const btnStart = document.getElementById('btnStart');
   if(on_ms == lastPushedOn && off_ms == lastPushedOff){
-    if(applyCountdown){ clearInterval(applyCountdown); applyCountdown = null; label.innerText=''; }
+    if(applyCountdown){ clearInterval(applyCountdown); applyCountdown = null; label.innerText=''; btnStart.classList.remove('pending-blink'); }
     return;
   }
   if(applyCountdown) clearInterval(applyCountdown);
   let remaining = 10;
   label.innerText = 'wird in ' + remaining + 's uebernommen...';
+  btnStart.classList.add('pending-blink');
   applyCountdown = setInterval(()=>{
     remaining--;
     if(remaining <= 0){
       clearInterval(applyCountdown);
       applyCountdown = null;
       label.innerText = '';
+      btnStart.classList.remove('pending-blink');
       lastPushedOn = document.getElementById('on_ms').value;
       lastPushedOff = document.getElementById('off_ms').value;
       startStrahler();
