@@ -322,6 +322,8 @@ document.querySelectorAll('[data-code]').forEach(b=>{
     b.innerText = String(remaining);
     b.style.background = '#c62828';
     b.style.color = '#fff';
+    b.style.fontSize = '28px';
+    b.style.fontWeight = '800';
     countdownTimer = setInterval(()=>{
       remaining--;
       if(remaining <= 0){
@@ -330,6 +332,8 @@ document.querySelectorAll('[data-code]').forEach(b=>{
         b.innerHTML = originalHtml;
         b.style.background = '';
         b.style.color = '';
+        b.style.fontSize = '';
+        b.style.fontWeight = '';
         sendCode(b);
       } else {
         b.innerText = String(remaining);
@@ -343,6 +347,8 @@ document.querySelectorAll('[data-code]').forEach(b=>{
       b.innerHTML = originalHtml;
       b.style.background = '';
       b.style.color = '';
+      b.style.fontSize = '';
+      b.style.fontWeight = '';
     }
   };
   b.addEventListener('mousedown', start);
