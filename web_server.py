@@ -414,13 +414,29 @@ function loadStrahlerStatus(){
     document.getElementById('btnStop').classList.toggle('active-state', !s.running);
     document.getElementById('btnOn').classList.toggle('active-state', s.running === 'on');
     document.getElementById('btnOff').classList.toggle('active-state', !s.running);
-    if(s.running === true){
-      document.getElementById('on_ms').value = s.on_ms;
-      document.getElementById('off_ms').value = s.off_ms;
+    strahlerPulsing = (s.running === true);
+    if(lastPushedOn === null){
+      lastPushedOn = s.on_ms;
+      lastPushedOff = s.off_ms;
     }
   });
 }
 setInterval(loadStrahlerStatus, 5000);
+
+let strahlerPulsing = false;
+let lastPushedOn = null;
+let lastPushedOff = null;
+function checkTimingChange(){
+  if(!strahlerPulsing) return;
+  const on_ms = document.getElementById('on_ms').value;
+  const off_ms = document.getElementById('off_ms').value;
+  if(on_ms != lastPushedOn || off_ms != lastPushedOff){
+    lastPushedOn = on_ms;
+    lastPushedOff = off_ms;
+    startStrahler();
+  }
+}
+setInterval(checkTimingChange, 10000);
 function loadConfig(){
   fetch('/api/config').then(r=>r.json()).then(cfg=>{
     document.getElementById('standort').value = cfg.standort || '';
@@ -532,12 +548,13 @@ def handle_request(method, path, params, body):
     if path == "/api/strahler/start" and method == "POST":
         on_ms = int(params.get("on_ms", 100))
         off_ms = int(params.get("off_ms", 50))
-        try:
-            send_by_name("photocell_off")
-            send_by_name("tel")
-            save_last("tel")
-        except Exception as e:
-            return 500, "application/json", ujson.dumps({"ok": False, "error": "Vorbereitung (photocell_off/tel) fehlgeschlagen: " + str(e)})
+        if not strahler.running:
+            try:
+                send_by_name("photocell_off")
+                send_by_name("tel")
+                save_last("tel")
+            except Exception as e:
+                return 500, "application/json", ujson.dumps({"ok": False, "error": "Vorbereitung (photocell_off/tel) fehlgeschlagen: " + str(e)})
         strahler.start(on_ms=on_ms, off_ms=off_ms)
         return 200, "application/json", '{"ok":true}'
     if path == "/api/strahler/stop" and method == "POST":
