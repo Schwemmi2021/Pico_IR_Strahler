@@ -294,6 +294,10 @@ HTML_PAGE = """<!DOCTYPE html>
     <button class="sbtn stop" id="btnStop" onclick="stopStrahler()">Stop</button>
   </div>
   <p id="status"></p>
+  <div class="row">
+    <button class="sbtn" style="background:#666;color:#fff" onclick="restoreAuto()">Automatik wiederherstellen (Photocell)</button>
+  </div>
+  <p id="restoreStatus" style="font-size:12px;color:#666"></p>
 </div>
 
 <div class="btn-tooltip" id="btnTooltip"></div>
@@ -373,10 +377,17 @@ function loadLast(){
 function startStrahler(){
   const on_ms = document.getElementById('on_ms').value;
   const off_ms = document.getElementById('off_ms').value;
+  document.getElementById('status').innerText='sende photocell_off + tel, dann Start...';
   fetch('/api/strahler/start?on_ms='+on_ms+'&off_ms='+off_ms, {method:'POST'})
-    .then(()=>{
-      document.getElementById('status').innerText='laeuft: '+on_ms+'ms an / '+off_ms+'ms aus';
+    .then(r=>r.json())
+    .then(r=>{
+      if(r.ok){
+        document.getElementById('status').innerText='laeuft: '+on_ms+'ms an / '+off_ms+'ms aus';
+      } else {
+        document.getElementById('status').innerText='Fehler: '+r.error;
+      }
       loadStrahlerStatus();
+      loadLast();
     });
 }
 function stopStrahler(){
@@ -384,6 +395,17 @@ function stopStrahler(){
     .then(()=>{
       document.getElementById('status').innerText='gestoppt';
       loadStrahlerStatus();
+    });
+}
+function restoreAuto(){
+  document.getElementById('restoreStatus').innerText='sende photocell_1...';
+  fetch('/api/strahler/restore_auto', {method:'POST'})
+    .then(r=>r.json())
+    .then(r=>{
+      document.getElementById('restoreStatus').innerText = r.ok
+        ? 'Automatik wiederhergestellt (photocell_1 gesendet)'
+        : 'Fehler: '+r.error;
+      loadLast();
     });
 }
 function loadStrahlerStatus(){
@@ -513,10 +535,23 @@ def handle_request(method, path, params, body):
     if path == "/api/strahler/start" and method == "POST":
         on_ms = int(params.get("on_ms", 100))
         off_ms = int(params.get("off_ms", 50))
+        try:
+            send_by_name("photocell_off")
+            send_by_name("tel")
+            save_last("tel")
+        except Exception as e:
+            return 500, "application/json", ujson.dumps({"ok": False, "error": "Vorbereitung (photocell_off/tel) fehlgeschlagen: " + str(e)})
         strahler.start(on_ms=on_ms, off_ms=off_ms)
         return 200, "application/json", '{"ok":true}'
     if path == "/api/strahler/stop" and method == "POST":
         strahler.stop()
+        return 200, "application/json", '{"ok":true}'
+    if path == "/api/strahler/restore_auto" and method == "POST":
+        try:
+            send_by_name("photocell_1")
+            save_last("photocell_1")
+        except Exception as e:
+            return 500, "application/json", ujson.dumps({"ok": False, "error": str(e)})
         return 200, "application/json", '{"ok":true}'
     if path == "/api/strahler/status" and method == "GET":
         return 200, "application/json", ujson.dumps({
