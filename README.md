@@ -230,9 +230,17 @@ s.stop()
 
 ## Bekannte offene Punkte
 
-- ~~`power_5` liefert verrauschte Aufzeichnung~~ — **behoben** durch Umstieg
-  auf das KY-022-Empfaengermodul. Alle 19 Tasten wurden damit neu und
-  sauber eingelernt (`codes.json` aktuell).
+- **`power_5` (Taste "5" bei Power) — vermutlich defekter Taster auf der
+  Fernbedienung.** Mit dem neuen KY-022-Empfaenger liefern alle anderen
+  18 Tasten jedes Mal ein sauberes, konsistentes Signal. `power_5` liefert
+  dagegen bei jedem Versuch ein anderes, unregelmaessiges Muster (teils mit
+  Pausen von mehreren Minuten zwischen Impulsen) — das deutet auf einen
+  Wackelkontakt am physischen Taster selbst hin, nicht auf ein
+  Empfaenger-/Software-Problem (das war vor dem KY-022-Umstieg noch nicht
+  sicher unterscheidbar). Die in `codes.json` gespeicherte Version ist die
+  brauchbarste von mehreren Versuchen, aber moeglicherweise nicht 100%
+  identisch mit dem echten Fernbedienungssignal — bei Verhaltensabweichung
+  am Strahler ggf. mit einer zweiten/anderen Fernbedienung neu einlernen.
 - **Relais/GP12**: siehe Hardware-Tabelle oben, Wechsel auf GP17 empfohlen
   und noch zu testen.
 - Andere Tasten (Photocell-Stufen, Timer-Stufen, Tel/Dim, Lock, Status,
