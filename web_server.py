@@ -296,8 +296,8 @@ HTML_PAGE = """<!DOCTYPE html>
     </div>
     <div class="headers" style="grid-template-columns:repeat(2,1fr)"><div>PULS</div><div>DAUER</div></div>
     <div class="grid" style="grid-template-columns:repeat(2,1fr)">
-      <div class="btn" id="btnStart" onclick="startStrahler()" style="font-size:11px" data-tooltip="Sendet einmalig photocell_off + tel, dann startet der Puls-Timer (An/Aus im eingestellten ms-Rhythmus) am Relais-GPIO.">Start</div>
-      <div class="btn" id="btnOn" onclick="strahlerOn()" style="font-size:11px" data-tooltip="Sendet einmalig photocell_off + tel, dann schaltet das Relais dauerhaft auf An (kein Pulsen, durchgehendes Leuchten).">An</div>
+      <div class="btn" id="btnStart" onclick="startStrahler()" style="font-size:11px" data-tooltip="Sendet einmalig photocell_off + tel + timer_off, dann startet der Puls-Timer (An/Aus im eingestellten ms-Rhythmus) am Relais-GPIO.">Start</div>
+      <div class="btn" id="btnOn" onclick="strahlerOn()" style="font-size:11px" data-tooltip="Sendet einmalig photocell_off + tel + timer_off, dann schaltet das Relais dauerhaft auf An (kein Pulsen, durchgehendes Leuchten).">An</div>
       <div class="btn" id="btnStop" onclick="stopStrahler()" style="font-size:11px" data-tooltip="Stoppt den Puls-Timer und oeffnet den Relais-Kontakt (Aus).">Stop</div>
       <div class="btn" id="btnOff" onclick="strahlerOff()" style="font-size:11px" data-tooltip="Oeffnet den Relais-Kontakt dauerhaft (Aus), ohne den Telemetrie-Modus zu aendern.">Aus</div>
     </div>
@@ -583,10 +583,14 @@ def handle_request(method, path, params, body):
         if not strahler.running:
             try:
                 send_by_name("photocell_off")
+                time.sleep_ms(500)
                 send_by_name("tel")
-                save_last("tel")
+                time.sleep_ms(500)
+                send_by_name("timer_off")
+                time.sleep_ms(500)
+                save_last("timer_off")
             except Exception as e:
-                return 500, "application/json", ujson.dumps({"ok": False, "error": "Vorbereitung (photocell_off/tel) fehlgeschlagen: " + str(e)})
+                return 500, "application/json", ujson.dumps({"ok": False, "error": "Vorbereitung (photocell_off/tel/timer_off) fehlgeschlagen: " + str(e)})
         strahler.start(on_ms=on_ms, off_ms=off_ms)
         return 200, "application/json", '{"ok":true}'
     if path == "/api/strahler/stop" and method == "POST":
@@ -598,7 +602,7 @@ def handle_request(method, path, params, body):
             send_by_name("tel")
             save_last("tel")
         except Exception as e:
-            return 500, "application/json", ujson.dumps({"ok": False, "error": "Vorbereitung (photocell_off/tel) fehlgeschlagen: " + str(e)})
+            return 500, "application/json", ujson.dumps({"ok": False, "error": "Vorbereitung (photocell_off/tel/timer_off) fehlgeschlagen: " + str(e)})
         strahler.on()
         return 200, "application/json", '{"ok":true}'
     if path == "/api/strahler/off" and method == "POST":
