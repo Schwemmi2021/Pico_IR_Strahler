@@ -567,6 +567,16 @@ def handle_request(method, path, params, body):
         try:
             durations = send_and_capture(name)
             save_last(name)
+            if name in ("reset", "lock"):
+                # Original-Fernbedienung sendet bei diesen Tasten wiederholt
+                # Signal, solange sie 4 Sek. gehalten wird (LEDs bleiben so
+                # lange orange). Unsere Aufzeichnung enthaelt nur einen
+                # einzelnen kurzen Burst - den also fuer ~4,5s wiederholen,
+                # um das Halten nachzubilden.
+                hold_start = time.ticks_ms()
+                while time.ticks_diff(time.ticks_ms(), hold_start) < 4500:
+                    time.sleep_ms(40)
+                    send_by_name(name)
             if name.startswith("timer_") and name != "timer_off" and strahler.running:
                 # Timer Setting = Nachlaufzeit nach Telemetrie-Trigger. Waehrend
                 # das Relais pulst/an ist, muss die Nachlaufzeit deaktiviert
