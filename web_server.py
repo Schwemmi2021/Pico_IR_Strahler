@@ -567,6 +567,14 @@ def handle_request(method, path, params, body):
         try:
             durations = send_and_capture(name)
             save_last(name)
+            if name.startswith("timer_") and name != "timer_off" and strahler.running:
+                # Timer Setting = Nachlaufzeit nach Telemetrie-Trigger. Waehrend
+                # das Relais pulst/an ist, muss die Nachlaufzeit deaktiviert
+                # bleiben, sonst haengt der Strahler nach jedem Puls fuer die
+                # eingestellte Zeit fest auf "an".
+                time.sleep_ms(500)
+                send_by_name("timer_off")
+                save_last("timer_off")
             return 200, "application/json", ujson.dumps({
                 "ok": True,
                 "rx_count": len(durations) if durations else 0,
