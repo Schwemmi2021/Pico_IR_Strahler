@@ -729,11 +729,20 @@ def run_server(port=80):
             cl.close()
 
 
+STRAHLER_BOOT_WAIT_MS = 10000  # Sicherheitswartezeit: falls der Strahler
+# selbst gerade erst wieder Strom bekommen hat (gemeinsamer Stromausfall),
+# muss er erst hochfahren, bevor sein IR-Empfaenger Befehle sicher
+# entgegennimmt. Keine Angabe im Handbuch gefunden - Erfahrungswert.
+
+
 def restore_state():
     """Stellt nach einem Neustart (Stromausfall Pico und/oder Strahler) den
     zuletzt aktiven Zustand wieder her: gewaehlte Power-Stufe und ob
     Pulsieren/Dauerlicht aktiv war."""
     state = load_strahler_state()
+    if not state.get("level") and state.get("mode", "off") == "off":
+        return
+    time.sleep_ms(STRAHLER_BOOT_WAIT_MS)
     try:
         if state.get("level"):
             send_by_name(state["level"])
