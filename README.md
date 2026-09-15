@@ -16,18 +16,25 @@ und stellt das Ganze ueber eine WLAN-Weboberflaeche bereit.
 | IR-Sende-LED Vorwiderstand | GP18 → LED | **100 Ω** (Bereich 100–220 Ω; kleiner = mehr Strom/Reichweite, aber GPIO-Strombegrenzung beachten) |
 | IR-Sende-LED Kathode | → GND | direkt |
 | Status-LED (Lern-/Sende-Anzeige) | GP13 | LED + Vorwiderstand ~220 Ω → GND |
-| Strahler-Telemetrie-Relais (Open-Drain) | **GP17** | Orange direkt an GP17, kein Widerstand (Open-Drain-Software) |
+| Strahler-Telemetrie-Relais (Open-Drain) | **GP16** | Orange direkt an GP16, kein Widerstand (Open-Drain-Software) |
 
 **Hinweis:** GP12 wurde zuerst verwendet, liess sich aber nicht sauber auf
-LOW ziehen (moeglicher Pin-Defekt) — **GP17 funktioniert zuverlaessig** und
-ist die aktuelle, getestete Konfiguration.
+LOW ziehen (moeglicher Pin-Defekt) → Wechsel auf GP17. Am 2026-09-15 zeigte
+sich derselbe Fehlertyp erneut, diesmal auf **GP17**: der Pin haengt fest auf
+LOW, selbst voellig unbeschaltet und mit aktiviertem internen Pull-Up (der
+ihn eigentlich auf HIGH ziehen sollte). Diagnose per `mpremote exec` direkt
+auf dem Pico (`Pin(17, Pin.IN, Pin.PULL_UP).value()`). Mehrere andere GPIOs
+(16, 19, 20, 21, 22, 26, 27, 28) wurden mit demselben Verfahren als
+elektrisch gesund bestaetigt (lesen HIGH bei offenem Pin). Umgestellt auf
+**GP16** (direkter Nachbar-Pin von GP17 auf der Platine) — **funktioniert
+zuverlaessig** und ist die aktuelle, getestete Konfiguration.
 
 **Wichtig — vor dem ersten Pulsen einmalig "TEL" senden:** Die Taste `tel`
 ("Selects Telemetry Input") muss einmal gesendet werden, damit der
 Telemetrie-Eingang tatsaechlich die Beleuchtung steuert. Ohne das hat das
 Relais/GPIO keine sichtbare Wirkung, obwohl die Spannung am Eingang korrekt
 schaltet. Reihenfolge: `photocell_off` (Photocell deaktivieren) → `tel`
-(Telemetrie-Eingang auswaehlen) → danach schaltet `IRStrahler(17)`
+(Telemetrie-Eingang auswaehlen) → danach schaltet `IRStrahler(16)`
 zuverlaessig die Beleuchtung.
 
 ## Schaltplan
@@ -38,7 +45,7 @@ graph LR
         GP14["GP14"]
         GP18["GP18"]
         GP13["GP13"]
-        GP17["GP17 (Relais)"]
+        GP16["GP16 (Relais)"]
         GND["GND"]
         V3["3V3"]
     end
@@ -55,7 +62,7 @@ graph LR
     LED2A --> LED2K["Status-LED Kathode"]
     LED2K --> GND
 
-    GP17 -.->|"Open-Drain: LOW=an, hochohmig=aus"| ORANGE["Orange (Strahler Telemetrie +)"]
+    GP16 -.->|"Open-Drain: LOW=an, hochohmig=aus"| ORANGE["Orange (Strahler Telemetrie +)"]
     GND -.->|gemeinsame Masse| PURPLE["Purple (Strahler Telemetrie GND)"]
 
     ORANGE -.- STRAHLER["Raytec VARIO2<br/>Telemetry Input"]
@@ -127,7 +134,7 @@ Laut Raytec "Combined Installation Guide" (0330-D-00018-Rev4), Step 4:
      Strahler reagiert aber trotzdem nicht sichtbar
   Bestaetigung fuer Schritt 1: rechte Status-LED am Strahler leuchtet kurz
   **durchgehend Amber** bei gueltigem Fernbedienungs-Befehl.
-- Verkabelung: **Purple → Pico GND**, **Orange → GP17**
+- Verkabelung: **Purple → Pico GND**, **Orange → GP16**
 - Ansteuerung im Code ist **Open-Drain** (siehe `ir_strahler.py`):
   "An" = Pin als Ausgang auf LOW (simuliert Kurzschluss), "Aus" = Pin als
   hochohmiger Eingang (keine aktive Spannung auf die Leitung). Dadurch
@@ -213,7 +220,7 @@ Schleife gesendet, bis alle Bytes tatsaechlich uebertragen wurden (siehe
 Die Startseite bildet die Original-Fernbedienung nach (alle 19 Tasten als
 runde Buttons, Icons per SVG, kein Emoji) und enthaelt zusaetzlich eine
 zweite, kleinere "BERNARD TEC"-Fernbedienung fuer die Strahler-Relais-
-Steuerung (GP17), im selben visuellen Stil.
+Steuerung (GP16), im selben visuellen Stil.
 
 Features:
 - **Hover-Tooltips** (3 Sek. Verzoegerung) mit den passenden Handbuch-
@@ -289,8 +296,13 @@ s.stop()
   da ein echter Reset alle Strahler-Einstellungen zuruecksetzt.
 - ~~Relais/GP12 unklares Verhalten~~ — **geloest**: Wechsel auf GP17
   behebt das Problem, und `tel` muss vor dem ersten Pulsen einmalig
-  gesendet werden (siehe Relais-Verkabelung oben). Live am echten Strahler
-  mit Handykamera bestaetigt funktionsfaehig.
+  gesendet werden (siehe Relais-Verkabelung oben).
+- ~~Relais/GP17 zeigte am 2026-09-15 keine Wirkung mehr am Strahler~~ —
+  **geloest**: GP17 war hardwareseitig defekt (haengt fest auf LOW, auch
+  unbeschaltet mit Pull-Up). Diagnostiziert per direkter Pin-Abfrage via
+  `mpremote exec`; mehrere Alternativ-GPIOs auf Funktionsfaehigkeit
+  getestet, auf **GP16** umgestellt. Live am echten Strahler bestaetigt
+  funktionsfaehig (sichtbares Pulsen).
 - Andere Tasten (Photocell-Stufen, Timer-Stufen, Tel/Dim, Lock, Status,
   Reset) wurden eingelernt, aber noch nicht einzeln gegen den echten
   Strahler verifiziert. Die Timer-Namen (`timer_full/75/50/25/off`)

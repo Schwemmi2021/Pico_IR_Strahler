@@ -15,7 +15,7 @@ def load_wifi_config():
         cfg = ujson.load(f)
     return cfg["ssid"], cfg["password"]
 
-STRAHLER_PIN = 17  # anpassen an das GPIO, mit dem das Relais/MOSFET verbunden ist
+STRAHLER_PIN = 16  # GP17 war defekt (haengt fest auf LOW), auf GP16 gewechselt
 CONFIG_FILE = "/config.json"
 
 strahler = IRStrahler(STRAHLER_PIN)
