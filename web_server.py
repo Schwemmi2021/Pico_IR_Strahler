@@ -22,6 +22,28 @@ strahler = IRStrahler(STRAHLER_PIN)
 
 LAST_FILE = "/last_sent.json"
 LAST_RX_FILE = "/last_rx.json"
+STRAHLER_STATE_FILE = "/strahler_state.json"
+
+
+def load_strahler_state():
+    try:
+        with open(STRAHLER_STATE_FILE) as f:
+            state = ujson.load(f)
+    except OSError:
+        state = {}
+    state.setdefault("mode", "off")
+    state.setdefault("on_ms", 100)
+    state.setdefault("off_ms", 50)
+    state.setdefault("level", None)
+    return state
+
+
+def save_strahler_state(update):
+    state = load_strahler_state()
+    state.update(update)
+    with open(STRAHLER_STATE_FILE, "w") as f:
+        ujson.dump(state, f)
+    return state
 
 
 def save_last_rx(durations):
@@ -567,6 +589,8 @@ def handle_request(method, path, params, body):
         try:
             durations = send_and_capture(name)
             save_last(name)
+            if name.startswith("power_"):
+                save_strahler_state({"level": name})
             if name in ("reset", "lock"):
                 # Original-Fernbedienung sendet bei diesen Tasten wiederholt
                 # Signal, solange sie 4 Sek. gehalten wird (LEDs bleiben so
@@ -616,9 +640,11 @@ def handle_request(method, path, params, body):
             except Exception as e:
                 return 500, "application/json", ujson.dumps({"ok": False, "error": "Vorbereitung (photocell_off/tel/timer_off) fehlgeschlagen: " + str(e)})
         strahler.start(on_ms=on_ms, off_ms=off_ms)
+        save_strahler_state({"mode": "pulse", "on_ms": on_ms, "off_ms": off_ms})
         return 200, "application/json", '{"ok":true}'
     if path == "/api/strahler/stop" and method == "POST":
         strahler.stop()
+        save_strahler_state({"mode": "off"})
         return 200, "application/json", '{"ok":true}'
     if path == "/api/strahler/on" and method == "POST":
         try:
@@ -631,9 +657,11 @@ def handle_request(method, path, params, body):
         except Exception as e:
             return 500, "application/json", ujson.dumps({"ok": False, "error": "Vorbereitung (photocell_off/tel/timer_off) fehlgeschlagen: " + str(e)})
         strahler.on()
+        save_strahler_state({"mode": "on"})
         return 200, "application/json", '{"ok":true}'
     if path == "/api/strahler/off" and method == "POST":
         strahler.off()
+        save_strahler_state({"mode": "off"})
         return 200, "application/json", '{"ok":true}'
     if path == "/api/strahler/status" and method == "GET":
         return 200, "application/json", ujson.dumps({
@@ -701,8 +729,34 @@ def run_server(port=80):
             cl.close()
 
 
+def restore_state():
+    """Stellt nach einem Neustart (Stromausfall Pico und/oder Strahler) den
+    zuletzt aktiven Zustand wieder her: gewaehlte Power-Stufe und ob
+    Pulsieren/Dauerlicht aktiv war."""
+    state = load_strahler_state()
+    try:
+        if state.get("level"):
+            send_by_name(state["level"])
+            time.sleep_ms(500)
+        mode = state.get("mode", "off")
+        if mode in ("pulse", "on"):
+            send_by_name("photocell_off")
+            time.sleep_ms(500)
+            send_by_name("tel")
+            time.sleep_ms(500)
+            send_by_name("timer_off")
+            save_last("timer_off")
+            if mode == "pulse":
+                strahler.start(on_ms=state.get("on_ms", 100), off_ms=state.get("off_ms", 50))
+            else:
+                strahler.on()
+    except Exception as e:
+        print("Zustand konnte nicht wiederhergestellt werden:", e)
+
+
 def main():
     connect_wifi()
+    restore_state()
     run_server()
 
 

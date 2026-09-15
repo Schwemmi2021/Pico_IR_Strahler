@@ -243,6 +243,14 @@ Features:
   senden
 - **Standort/Notizen-Felder** (oberhalb der Fernbedienung), persistent in
   `/config.json` gespeichert
+- **Automatische Zustandswiederherstellung nach Stromausfall** (Pico und/
+  oder Strahler): Power-Select-Stufe und Puls-/Dauerbetrieb-Zustand werden
+  bei jeder Aenderung in `/strahler_state.json` gespeichert. Beim Booten
+  (`restore_state()` in `web_server.py`, laeuft direkt nach dem WLAN-
+  Connect) wird automatisch die zuletzt gewaehlte Stufe erneut gesendet
+  und, falls zuletzt gepulst/dauerhaft an war, die komplette Vorbereitung
+  (`photocell_off`/`tel`/`timer_off`) plus der letzte Puls-/An-Zustand
+  wiederhergestellt — ohne manuellen Eingriff
 
 ## Web-API (fuer eigene Skripte/Integrationen)
 
