@@ -577,11 +577,17 @@ def handle_request(method, path, params, body):
                 while time.ticks_diff(time.ticks_ms(), hold_start) < 4500:
                     time.sleep_ms(40)
                     send_by_name(name)
-            if name.startswith("timer_") and name != "timer_off" and strahler.running:
-                # Timer Setting = Nachlaufzeit nach Telemetrie-Trigger. Waehrend
-                # das Relais pulst/an ist, muss die Nachlaufzeit deaktiviert
-                # bleiben, sonst haengt der Strahler nach jedem Puls fuer die
-                # eingestellte Zeit fest auf "an".
+            if name not in ("photocell_off", "tel", "timer_off") and strahler.running:
+                # Fast jede andere Taste (Power Select, Dim, Timer Setting,
+                # Reset, ...) wechselt den Strahler intern von "Telemetrie
+                # steuert An/Aus" auf einen manuellen/anderen Modus - er
+                # leuchtet dann nur noch durchgehend in der gewaehlten Stufe
+                # statt dem Relais zu folgen. Also nach jeder Fremd-Taste die
+                # Telemetrie-Vorbereitung automatisch neu senden.
+                time.sleep_ms(500)
+                send_by_name("photocell_off")
+                time.sleep_ms(500)
+                send_by_name("tel")
                 time.sleep_ms(500)
                 send_by_name("timer_off")
                 save_last("timer_off")
@@ -617,8 +623,11 @@ def handle_request(method, path, params, body):
     if path == "/api/strahler/on" and method == "POST":
         try:
             send_by_name("photocell_off")
+            time.sleep_ms(500)
             send_by_name("tel")
-            save_last("tel")
+            time.sleep_ms(500)
+            send_by_name("timer_off")
+            save_last("timer_off")
         except Exception as e:
             return 500, "application/json", ujson.dumps({"ok": False, "error": "Vorbereitung (photocell_off/tel/timer_off) fehlgeschlagen: " + str(e)})
         strahler.on()
