@@ -555,19 +555,26 @@ document.querySelectorAll('[data-code], [data-tooltip]').forEach(b=>{
 """
 
 
-def connect_wifi(ssid=None, password=None, timeout_s=20):
+def connect_wifi(ssid=None, password=None, timeout_s=15, retries=6):
+    # Manche Access Points (z.B. mobile Hotspots) brauchen gelegentlich
+    # mehrere Anlaeufe, bevor die Verbindung wirklich zustande kommt -
+    # daher mehrere komplette Verbindungsversuche statt nur einem.
     if ssid is None or password is None:
         ssid, password = load_wifi_config()
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
-    wlan.connect(ssid, password)
-    start = time.ticks_ms()
-    while not wlan.isconnected():
-        if time.ticks_diff(time.ticks_ms(), start) > timeout_s * 1000:
-            raise RuntimeError("WLAN-Verbindung fehlgeschlagen")
-        time.sleep_ms(200)
-    print("WLAN verbunden:", wlan.ifconfig())
-    return wlan
+    for attempt in range(1, retries + 1):
+        wlan.disconnect()
+        time.sleep_ms(500)
+        wlan.connect(ssid, password)
+        start = time.ticks_ms()
+        while time.ticks_diff(time.ticks_ms(), start) < timeout_s * 1000:
+            if wlan.isconnected():
+                print("WLAN verbunden:", wlan.ifconfig())
+                return wlan
+            time.sleep_ms(200)
+        print("WLAN-Versuch", attempt, "fehlgeschlagen (Status", wlan.status(), ")")
+    raise RuntimeError("WLAN-Verbindung fehlgeschlagen nach " + str(retries) + " Versuchen")
 
 
 def parse_query(query):
@@ -691,6 +698,7 @@ def run_server(port=80):
     print("Server laeuft auf Port", port)
     while True:
         cl, remote_addr = s.accept()
+        cl.settimeout(10)
         try:
             req = cl.recv(2048)
             if not req:
