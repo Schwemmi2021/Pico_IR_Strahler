@@ -563,6 +563,13 @@ def connect_wifi(ssid=None, password=None, timeout_s=15, retries=6):
         ssid, password = load_wifi_config()
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
+    try:
+        wlan.config(pm=0xa11140)  # WLAN-Stromsparmodus aus - verursacht bei
+        # manchen Access Points staendige Mini-Aussetzer, waehrend andere
+        # Geraete (z.B. Laptops ohne diesen Sparmodus) am selben AP stabil
+        # bleiben
+    except Exception:
+        pass
     for attempt in range(1, retries + 1):
         wlan.disconnect()
         time.sleep_ms(500)
@@ -689,15 +696,47 @@ def handle_request(method, path, params, body):
     return 404, "text/plain", "not found"
 
 
+def check_wifi_reachable(gateway, timeout_s=3):
+    """Echter Erreichbarkeits-Check (nicht nur wlan.isconnected(), das bei
+    diesem Hotspot manchmal faelschlich 'verbunden' bleibt, obwohl die
+    Verbindung tot ist): Verbindungsversuch zum Gateway. Ein abgelehnter
+    Verbindungsaufbau (ECONNREFUSED) zaehlt auch als erreichbar - der Host
+    hat ja geantwortet."""
+    try:
+        cs = socket.socket()
+        cs.settimeout(timeout_s)
+        cs.connect((gateway, 80))
+        cs.close()
+        return True
+    except OSError as e:
+        cs.close()
+        return len(e.args) > 0 and e.args[0] == 111  # ECONNREFUSED
+    except Exception:
+        return False
+
+
 def run_server(port=80):
     addr = socket.getaddrinfo("0.0.0.0", port)[0][-1]
     s = socket.socket()
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind(addr)
     s.listen(4)
+    s.settimeout(20)  # Leerlauf-Gelegenheit fuer den WLAN-Watchdog unten
+    wlan = network.WLAN(network.STA_IF)
     print("Server laeuft auf Port", port)
     while True:
-        cl, remote_addr = s.accept()
+        try:
+            cl, remote_addr = s.accept()
+        except OSError:
+            # Kein Request in den letzten 20s - WLAN wirklich noch erreichbar?
+            gateway = wlan.ifconfig()[2]
+            if not wlan.isconnected() or not check_wifi_reachable(gateway):
+                print("WLAN tot trotz isconnected()==", wlan.isconnected(), "- Reconnect...")
+                try:
+                    connect_wifi()
+                except Exception as e:
+                    print("Reconnect-Versuch fehlgeschlagen:", e)
+            continue
         cl.settimeout(10)
         try:
             req = cl.recv(2048)
@@ -772,7 +811,13 @@ def restore_state():
 
 
 def main():
-    connect_wifi()
+    while True:
+        try:
+            connect_wifi()
+            break
+        except Exception as e:
+            print("Boot-WLAN-Verbindung fehlgeschlagen, versuche es weiter:", e)
+            time.sleep_ms(3000)
     restore_state()
     run_server()
 
