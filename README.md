@@ -5,6 +5,16 @@ Raytec-VARIO2-Fernbedienung ein, spielt sie ueber eine IR-Sende-LED wieder
 ab, steuert den Raytec-Telemetrie-Eingang per Relais/GPIO im An/Aus-Puls
 und stellt das Ganze ueber eine WLAN-Weboberflaeche bereit.
 
+## Zugriff (aktueller Stand)
+
+Der Pico haengt aktuell im WLAN des ZTE-Mobile-Hotspots (`ZTE_6F9977`),
+Dashboard erreichbar unter **http://192.168.8.32**. Die Zugangsdaten
+liegen ausschliesslich in `/wifi_config.json` auf dem Pico-Flash (nicht
+im Repo, siehe unten) — bei einem Netzwerkwechsel dort SSID/Passwort
+aendern und den Pico neu starten. IP kann sich bei einer neuen DHCP-
+Vergabe aendern; ein Blick ins Admin-Interface des Hotspots
+(Geraeteliste) zeigt die aktuelle IP, falls sie einmal abweicht.
+
 ## Hardware-Uebersicht
 
 | Funktion | GPIO | Bauteil / Wert |
@@ -201,6 +211,11 @@ Schleife gesendet, bis alle Bytes tatsaechlich uebertragen wurden (siehe
   Impulszeiten ohne Speichern
 - `codes.json` — Sicherung der bereits eingelernten Tasten der
   Raytec-Fernbedienung
+- `mdns_responder.py` — minimaler mDNS-Responder (`raytec.local`), laeuft
+  per `_thread` auf dem zweiten Core parallel zum Webserver. Funktioniert
+  technisch korrekt (Multicast-Gruppenbeitritt per `IP_ADD_MEMBERSHIP`),
+  Aufloesung im Netz haengt aber vom Router ab (siehe "Bekannte offene
+  Punkte")
 
 ## Deployment auf einen (neuen) Pico
 
@@ -241,16 +256,56 @@ Features:
   Countdown (Zahl im Button, blinkender gruener Rahmen) und uebernimmt die
   neuen Werte danach automatisch, ohne die Vorbereitungs-Befehle erneut zu
   senden
-- **Standort/Notizen-Felder** (oberhalb der Fernbedienung), persistent in
-  `/config.json` gespeichert
+- **Projektnummer/Standort/Notizen-Felder** (oberhalb der Fernbedienung),
+  persistent in `/config.json` gespeichert
 - **Automatische Zustandswiederherstellung nach Stromausfall** (Pico und/
   oder Strahler): Power-Select-Stufe und Puls-/Dauerbetrieb-Zustand werden
   bei jeder Aenderung in `/strahler_state.json` gespeichert. Beim Booten
-  (`restore_state()` in `web_server.py`, laeuft direkt nach dem WLAN-
-  Connect) wird automatisch die zuletzt gewaehlte Stufe erneut gesendet
-  und, falls zuletzt gepulst/dauerhaft an war, die komplette Vorbereitung
-  (`photocell_off`/`tel`/`timer_off`) plus der letzte Puls-/An-Zustand
-  wiederhergestellt — ohne manuellen Eingriff
+  (`restore_state()` in `web_server.py`) wird automatisch die zuletzt
+  gewaehlte Stufe erneut gesendet und, falls zuletzt gepulst/dauerhaft an
+  war, die komplette Vorbereitung (`photocell_off`/`tel`/`timer_off`) plus
+  der letzte Puls-/An-Zustand wiederhergestellt — ohne manuellen Eingriff.
+  Vor dem ersten Senden wartet der Pico fest 10 Sekunden (`STRAHLER_BOOT_
+  WAIT_MS`), falls der Strahler selbst gerade erst wieder Strom bekommen
+  hat und sein IR-Empfaenger noch hochfaehrt (keine Angabe dazu im
+  Handbuch gefunden, Sicherheitswert)
+- **WLAN-Signal-Icon** (4 Balken, gruen/rot) oben auf der Seite, alle 8s
+  per `/api/wifi` aktualisiert — praktisch zur Fehlersuche bei
+  Verbindungsproblemen
+- **Event-Log** (ganz unten, eingeklappt per `<details>`, nicht automatisch
+  sichtbar): protokolliert Boot, Start/Stop, An/Aus und automatische
+  Wiederherstellung mit echter UTC-Zeit (NTP-Sync beim Booten), nach Datum
+  gruppiert, auf 300 Eintraege begrenzt (kuerzt sich selbst, sobald die
+  Datei deutlich groesser wird — schont den Flash-Speicher), mit manuellem
+  Aktualisieren-Button und einem bestaetigungsgeschuetzten "Log loeschen"-
+  Button
+
+## Betriebssicherheit / Ausfallsicherheit
+
+Der Pico laeuft im Feldeinsatz unbeaufsichtigt (z.B. an einem Mobile-
+Hotspot, der auch mal ausfaellt oder neu startet). Dafuer eingebaut:
+
+- **WLAN-Boot gibt nie auf**: `main()` versucht `connect_wifi()` in einer
+  Endlosschleife (3s Pause zwischen Versuchen), `connect_wifi()` selbst
+  macht bis zu 6 komplette Verbindungsversuche pro Aufruf. Ein einzelner
+  fehlgeschlagener Boot-Versuch fuehrt also nie zu einem dauerhaft
+  gestoppten Geraet.
+- **Watchdog waehrend des Betriebs**: `run_server()` prueft bei 20s
+  Inaktivitaet die echte Erreichbarkeit des Gateways (nicht nur
+  `wlan.isconnected()`, das bei manchen Access Points faelschlich
+  "verbunden" bleibt) und erzwingt bei Bedarf einen Reconnect.
+- **Eingebaute LED als Status-Anzeige** (Pico W/2 W, `Pin("LED")`), auch
+  ohne USB-Zugriff ablesbar:
+  - **langsames Blinken** — verbindet gerade mit dem WLAN
+  - **durchgehend an** — verbunden
+  - **kurzes schnelles Blinken** — alle 6 Versuche fehlgeschlagen, bevor
+    der Boot-Prozess von vorne beginnt
+- **Zustandswiederherstellung** nach Stromausfall (siehe oben,
+  `/strahler_state.json`) und **Event-Log** zur nachtraeglichen Analyse,
+  wie oft/wann das vorkommt.
+- **NTP-Zeitsync** (`ntptime.settime()`) beim Booten, direkt nach der
+  WLAN-Verbindung — ohne das wuerde die interne Uhr bei jedem
+  Stromausfall zurueckspringen und Log-Zeitstempel waeren wertlos.
 
 ## Web-API (fuer eigene Skripte/Integrationen)
 
@@ -268,7 +323,14 @@ Features:
 - `POST /api/strahler/off` — Dauerhaft Aus, kein Puls-Timer
 - `GET /api/strahler/status` — `{running, pin, on_ms, off_ms}` —
   `running` ist `true` (pulsiert), `"on"` (dauerhaft an) oder `false`
-- `GET/POST /api/config` — Standort/Notizen (`{"standort": "...", "notizen": "..."}`)
+- `GET/POST /api/config` — Projektnummer/Standort/Notizen
+  (`{"projektnummer": "...", "standort": "...", "notizen": "..."}`)
+- `GET /api/wifi` — aktuelle WLAN-Signalstaerke `{"rssi": -47}` (dBm, via
+  `wlan.status("rssi")`)
+- `GET /api/log` — Event-Log, neueste zuerst, je Eintrag `{ts, event,
+  date, time, ...}` (z.B. `on_ms`/`off_ms` bei `start`); Events: `boot`,
+  `start`, `stop`, `on`, `off`, `restore`
+- `DELETE /api/log` — loescht das komplette Event-Log
 
 ## Verwendung (direkt per REPL)
 
@@ -291,17 +353,15 @@ s.stop()
   Tastendruecke (statt Halten) liefern durchgehend saubere, konsistente
   Aufzeichnungen. Alle 19 Codes wurden mit dieser Technik final neu
   eingelernt.
-- **`reset` — 4-Sekunden-Halteregel laut Handbuch, aber nicht in der
-  Aufzeichnung sichtbar.** Das Handbuch verlangt am Original-Geraet
-  "Must be depressed for 4 seconds" fuer Reset (und fuer
-  Fernbedienung-Sperren). Beim Einlernen mit tatsaechlich 4-5 Sekunden
-  gehaltener Taste blieb die aufgezeichnete Impulszahl trotzdem kurz
-  (Groessenordnung wie ein normaler Tastendruck) — das deutet darauf hin,
-  dass die 4-Sekunden-Wartezeit **in der Fernbedienung selbst** verarbeitet
-  wird (sie sendet vermutlich erst nach Ablauf der Wartezeit ein einzelnes
-  Signal), nicht als durchgehender Datenstrom, den man nachbauen muesste.
-  Nicht abschliessend verifiziert — **`reset` daher mit Vorsicht behandeln**,
-  da ein echter Reset alle Strahler-Einstellungen zuruecksetzt.
+- ~~`reset`/`lock` — 4-Sekunden-Halteregel laut Handbuch, aber nicht in
+  der Aufzeichnung sichtbar~~ — **geloest**: Die Original-Fernbedienung
+  sendet bei gehaltener Taste wiederholt kurze Signal-Bursts (die 3
+  Status-LEDs am Strahler bleiben deshalb die ganze Zeit orange). Die
+  Aufzeichnung enthielt nur einen einzelnen ~500ms-Burst. Die Web-Version
+  spielt diesen Burst jetzt fuer `reset`/`lock` alle 40ms wiederholt fuer
+  ~4,5 Sekunden ab (siehe `/api/send/<name>`-Handler) — live am echten
+  Geraet als identisch zur Original-Fernbedienung bestaetigt. **Achtung:**
+  ein echter Reset setzt weiterhin alle Strahler-Einstellungen zurueck.
 - ~~Relais/GP12 unklares Verhalten~~ — **geloest**: Wechsel auf GP17
   behebt das Problem, und `tel` muss vor dem ersten Pulsen einmalig
   gesendet werden (siehe Relais-Verkabelung oben).
@@ -311,9 +371,39 @@ s.stop()
   `mpremote exec`; mehrere Alternativ-GPIOs auf Funktionsfaehigkeit
   getestet, auf **GP16** umgestellt. Live am echten Strahler bestaetigt
   funktionsfaehig (sichtbares Pulsen).
+- ~~Fremd-Tasten (Power Select, Timer Setting, ...) unterbrechen laufendes
+  Pulsen~~ — **geloest**: Fast jede Taste ausser `photocell_off`/`tel`/
+  `timer_off` schaltet den Strahler intern von "Telemetrie steuert An/Aus"
+  auf einen manuellen/anderen Modus um (er leuchtet dann nur noch
+  durchgehend in der gewaehlten Stufe statt dem Relais zu folgen). Der
+  `/api/send/<name>`-Handler sendet deshalb automatisch die komplette
+  Telemetrie-Vorbereitung erneut, wenn eine Fremd-Taste gesendet wird,
+  waehrend der Strahler pulst/an ist (kurzer ~2-3s Lichtwechsel, dann
+  automatische Wiederherstellung).
+- ~~WLAN-Verbindung zum ZTE-Mobile-Hotspot instabil (verbindet, dann
+  sofort wieder weg)~~ — **geloest**: Ursache war der WLAN-
+  Energiesparmodus des Pico (`cyw43439`), der den Funk periodisch schlafen
+  legt und dabei Pakete von manchen Access Points verpasst — ein Laptop
+  am selben Hotspot war davon nicht betroffen, was den entscheidenden
+  Hinweis gab. Behoben mit `wlan.config(pm=0xa11140)` (Sparmodus aus).
+  Zusaetzlich robuster gemacht: `connect_wifi()` versucht bis zu 6x pro
+  Aufruf und der Boot-Prozess in `main()` gibt nie komplett auf (versucht
+  nach einem Fehlschlag alle 3s erneut), ein Watchdog in `run_server()`
+  prueft bei Inaktivitaet (20s) die echte Erreichbarkeit (nicht nur
+  `wlan.isconnected()`, das faelschlich "verbunden" bleiben kann) und
+  erzwingt bei Bedarf einen Reconnect, und jede Client-Verbindung hat
+  einen 10s-Timeout, damit eine haengende Anfrage nicht den ganzen
+  (einzelnen) Server-Thread blockiert.
 - Andere Tasten (Photocell-Stufen, Timer-Stufen, Tel/Dim, Lock, Status,
   Reset) wurden eingelernt, aber noch nicht einzeln gegen den echten
   Strahler verifiziert. Die Timer-Namen (`timer_full/75/50/25/off`)
   basieren auf einer visuellen Vermutung anhand der Fuellstand-Grafik auf
   der Fernbedienung, nicht auf einer Bestaetigung durch das Handbuch
   (das spricht von konkreten Minutenwerten: 30/10/3/1 Min./deaktiviert).
+- **mDNS (`raytec.local`) funktioniert noch nicht zuverlaessig**: Der
+  Responder auf dem Pico laeuft korrekt (bestaetigt per direktem
+  Multicast-Test), aber Anfragen kamen im Test nicht durch — vermutlich
+  weil der aktuell genutzte Router/Hotspot Multicast-Verkehr zwischen
+  WLAN-Clients nicht durchlaesst (Client-Isolation/fehlendes IGMP
+  Snooping). Betrifft nicht die Kernfunktion, die feste IP funktioniert
+  zuverlaessig.
