@@ -112,7 +112,7 @@ def load_config():
         with open(CONFIG_FILE) as f:
             return ujson.load(f)
     except OSError:
-        return {"standort": "", "notizen": ""}
+        return {"projektnummer": "", "standort": "", "notizen": ""}
 
 
 def save_config(data):
@@ -179,8 +179,21 @@ HTML_PAGE = """<!DOCTYPE html>
   .info-icon:hover .tooltip,.info-icon:active .tooltip{visibility:visible;opacity:1}
   .btn-tooltip{position:fixed;visibility:hidden;opacity:0;background:#222;color:#fff;font-size:12px;line-height:1.5;padding:10px 12px;border-radius:8px;max-width:220px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,.35);transition:opacity .15s;pointer-events:none}
   .btn-tooltip.show{visibility:visible;opacity:1}
+  .wifi-bar{display:flex;justify-content:flex-end;align-items:center;gap:6px;margin-bottom:10px;font-size:11px;color:#555}
+  .wifi-bar svg{width:20px;height:16px}
+  .wifi-bar rect{fill:#ccc}
+  .wifi-bar rect.on{fill:#2e7d32}
+  .wifi-bar.weak rect.on{fill:#c62828}
 </style></head><body>
+<div class="wifi-bar" id="wifiBar" title="WLAN-Signal">
+  <svg viewBox="0 0 20 16"><rect class="b1" x="0" y="11" width="3" height="5"/><rect class="b2" x="5" y="8" width="3" height="8"/><rect class="b3" x="10" y="4" width="3" height="12"/><rect class="b4" x="15" y="0" width="3" height="16"/></svg>
+  <span id="wifiDbm">--</span>
+</div>
 <div class="section" style="margin-top:0;padding-top:0;border-top:none">
+  <h3>Projektnummer</h3>
+  <div class="row">
+    <input id="projektnummer" type="text" placeholder="z.B. P-2026-0142">
+  </div>
   <h3>Standort</h3>
   <div class="row">
     <input id="standort" type="text" placeholder="z.B. Lagerhalle Nord, Mast 3">
@@ -493,18 +506,37 @@ function scheduleTimingApply(){
 }
 function loadConfig(){
   fetch('/api/config').then(r=>r.json()).then(cfg=>{
+    document.getElementById('projektnummer').value = cfg.projektnummer || '';
     document.getElementById('standort').value = cfg.standort || '';
     document.getElementById('notizen').value = cfg.notizen || '';
   });
 }
 function saveConfig(){
   const data = {
+    projektnummer: document.getElementById('projektnummer').value,
     standort: document.getElementById('standort').value,
     notizen: document.getElementById('notizen').value
   };
   fetch('/api/config', {method:'POST', body: JSON.stringify(data)})
     .then(()=>document.getElementById('cfgstatus').innerText='gespeichert');
 }
+function loadWifiStatus(){
+  fetch('/api/wifi').then(r=>r.json()).then(w=>{
+    const bar = document.getElementById('wifiBar');
+    const bars = [1,2,3,4].map(n=>bar.querySelector('.b'+n));
+    let count = 0;
+    if (w.rssi >= -50) count = 4;
+    else if (w.rssi >= -60) count = 3;
+    else if (w.rssi >= -70) count = 2;
+    else if (w.rssi >= -80) count = 1;
+    else count = 0;
+    bars.forEach((b,i)=>b.classList.toggle('on', i < count));
+    bar.classList.toggle('weak', count <= 1);
+    document.getElementById('wifiDbm').innerText = w.rssi + ' dBm';
+  }).catch(()=>{});
+}
+setInterval(loadWifiStatus, 8000);
+loadWifiStatus();
 loadConfig();
 loadLast();
 loadStrahlerStatus();
@@ -684,6 +716,13 @@ def handle_request(method, path, params, body):
             "on_ms": strahler.on_ms,
             "off_ms": strahler.off_ms,
         })
+    if path == "/api/wifi" and method == "GET":
+        wlan = network.WLAN(network.STA_IF)
+        try:
+            rssi = wlan.status("rssi")
+        except Exception:
+            rssi = None
+        return 200, "application/json", ujson.dumps({"rssi": rssi})
     if path == "/api/config" and method == "GET":
         return 200, "application/json", ujson.dumps(load_config())
     if path == "/api/config" and method == "POST":
@@ -818,6 +857,12 @@ def main():
         except Exception as e:
             print("Boot-WLAN-Verbindung fehlgeschlagen, versuche es weiter:", e)
             time.sleep_ms(3000)
+    try:
+        import _thread
+        import mdns_responder
+        _thread.start_new_thread(mdns_responder.run, ("raytec",))
+    except Exception as e:
+        print("mDNS-Responder konnte nicht gestartet werden:", e)
     restore_state()
     run_server()
 
