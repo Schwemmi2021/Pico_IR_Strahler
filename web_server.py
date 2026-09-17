@@ -46,6 +46,60 @@ def save_strahler_state(update):
     return state
 
 
+EVENT_LOG_FILE = "/event_log.jsonl"
+MAX_LOG_ENTRIES = 300  # begrenzt die Logdatei, damit der Flash-Speicher nicht vollgeschrieben wird
+
+
+def _format_ts(ts):
+    try:
+        y, mo, d, h, mi, s, _, _ = time.localtime(ts)
+        return "{:04d}-{:02d}-{:02d}".format(y, mo, d), "{:02d}:{:02d} UTC".format(h, mi)
+    except Exception:
+        return str(ts), ""
+
+
+def log_event(event, **kwargs):
+    entry = {"ts": time.time(), "event": event}
+    entry.update(kwargs)
+    try:
+        with open(EVENT_LOG_FILE, "a") as f:
+            f.write(ujson.dumps(entry) + "\n")
+    except OSError:
+        return
+    # Nur gelegentlich (bei deutlichem Ueberschreiten) neu schreiben und
+    # kuerzen, um nicht bei jedem einzelnen Eintrag den ganzen Log neu zu
+    # schreiben (schont den Flash-Speicher)
+    try:
+        with open(EVENT_LOG_FILE) as f:
+            lines = f.readlines()
+        if len(lines) > MAX_LOG_ENTRIES * 2:
+            with open(EVENT_LOG_FILE, "w") as f:
+                f.writelines(lines[-MAX_LOG_ENTRIES:])
+    except OSError:
+        pass
+
+
+def load_log(limit=100):
+    try:
+        with open(EVENT_LOG_FILE) as f:
+            lines = f.readlines()
+    except OSError:
+        return []
+    entries = []
+    for line in lines[-limit:]:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            data = ujson.loads(line)
+            data["date"], data["time"] = _format_ts(data["ts"])
+            entries.append(data)
+        except Exception:
+            continue
+    entries.reverse()
+    return entries
+
+
 def save_last_rx(durations):
     with open(LAST_RX_FILE, "w") as f:
         ujson.dump({"count": len(durations) if durations else 0, "durations": durations or []}, f)
@@ -184,6 +238,15 @@ HTML_PAGE = """<!DOCTYPE html>
   .wifi-bar rect{fill:#ccc}
   .wifi-bar rect.on{fill:#2e7d32}
   .wifi-bar.weak rect.on{fill:#c62828}
+  details.section summary{cursor:pointer;font-size:15px;font-weight:700;color:#222;list-style:none}
+  details.section summary::-webkit-details-marker{display:none}
+  details.section summary::before{content:'\25B8 ';display:inline-block;transition:transform .15s}
+  details.section[open] summary::before{transform:rotate(90deg)}
+  .log-list{max-height:220px;overflow-y:auto;font-size:12px;border:1px solid #ccc;border-radius:6px;background:#fafafa}
+  .log-date{padding:5px 8px;background:#e8e8e3;font-weight:700;font-size:11px;color:#444}
+  .log-entry{padding:6px 8px;border-bottom:1px solid #e0e0e0}
+  .log-entry:last-child{border-bottom:none}
+  .log-time{color:#777;margin-right:6px}
 </style></head><body>
 <div class="wifi-bar" id="wifiBar" title="WLAN-Signal">
   <svg viewBox="0 0 20 16"><rect class="b1" x="0" y="11" width="3" height="5"/><rect class="b2" x="5" y="8" width="3" height="8"/><rect class="b3" x="10" y="4" width="3" height="12"/><rect class="b4" x="15" y="0" width="3" height="16"/></svg>
@@ -339,6 +402,15 @@ HTML_PAGE = """<!DOCTYPE html>
     <div class="brand"><span class="ray">BERNARD</span><span class="tec">TEC</span></div>
   </div>
 </div>
+
+<details class="section">
+  <summary>Log</summary>
+  <div style="margin:10px 0 6px">
+    <button class="sbtn" style="padding:4px 10px;font-size:12px;width:auto;display:inline-block" onclick="loadLog()">Aktualisieren</button>
+    <button class="sbtn" style="padding:4px 10px;font-size:12px;width:auto;display:inline-block;background:#c62828;color:#fff;border-color:#8e1c1c" onclick="clearLog()">Log loeschen</button>
+  </div>
+  <div id="logList" class="log-list"></div>
+</details>
 
 <div class="btn-tooltip" id="btnTooltip"></div>
 
@@ -537,6 +609,41 @@ function loadWifiStatus(){
 }
 setInterval(loadWifiStatus, 8000);
 loadWifiStatus();
+const LOG_LABELS = {
+  boot: "Neustart (Stromausfall?)",
+  start: "Puls gestartet",
+  stop: "Puls gestoppt",
+  on: "Dauerhaft an",
+  off: "Ausgeschaltet",
+  restore: "Automatisch wiederhergestellt"
+};
+function loadLog(){
+  fetch('/api/log').then(r=>r.json()).then(entries=>{
+    const el = document.getElementById('logList');
+    if (!entries.length){
+      el.innerHTML = '<div class="log-entry">Noch keine Eintraege</div>';
+      return;
+    }
+    let html = '';
+    let lastDate = null;
+    entries.forEach(e=>{
+      if (e.date !== lastDate){
+        html += '<div class="log-date">' + e.date + '</div>';
+        lastDate = e.date;
+      }
+      let label = LOG_LABELS[e.event] || e.event;
+      if (e.on_ms !== undefined) label += ' (An ' + e.on_ms + 'ms / Aus ' + e.off_ms + 'ms)';
+      else if (e.mode === 'on') label += ' (Dauerlicht)';
+      html += '<div class="log-entry"><span class="log-time">' + e.time + '</span>' + label + '</div>';
+    });
+    el.innerHTML = html;
+  }).catch(()=>{});
+}
+function clearLog(){
+  if (!confirm('Log wirklich komplett loeschen?')) return;
+  fetch('/api/log', {method:'DELETE'}).then(loadLog);
+}
+loadLog();
 loadConfig();
 loadLast();
 loadStrahlerStatus();
@@ -687,10 +794,12 @@ def handle_request(method, path, params, body):
                 return 500, "application/json", ujson.dumps({"ok": False, "error": "Vorbereitung (photocell_off/tel/timer_off) fehlgeschlagen: " + str(e)})
         strahler.start(on_ms=on_ms, off_ms=off_ms)
         save_strahler_state({"mode": "pulse", "on_ms": on_ms, "off_ms": off_ms})
+        log_event("start", on_ms=on_ms, off_ms=off_ms)
         return 200, "application/json", '{"ok":true}'
     if path == "/api/strahler/stop" and method == "POST":
         strahler.stop()
         save_strahler_state({"mode": "off"})
+        log_event("stop")
         return 200, "application/json", '{"ok":true}'
     if path == "/api/strahler/on" and method == "POST":
         try:
@@ -704,10 +813,12 @@ def handle_request(method, path, params, body):
             return 500, "application/json", ujson.dumps({"ok": False, "error": "Vorbereitung (photocell_off/tel/timer_off) fehlgeschlagen: " + str(e)})
         strahler.on()
         save_strahler_state({"mode": "on"})
+        log_event("on")
         return 200, "application/json", '{"ok":true}'
     if path == "/api/strahler/off" and method == "POST":
         strahler.off()
         save_strahler_state({"mode": "off"})
+        log_event("off")
         return 200, "application/json", '{"ok":true}'
     if path == "/api/strahler/status" and method == "GET":
         return 200, "application/json", ujson.dumps({
@@ -723,6 +834,15 @@ def handle_request(method, path, params, body):
         except Exception:
             rssi = None
         return 200, "application/json", ujson.dumps({"rssi": rssi})
+    if path == "/api/log" and method == "GET":
+        return 200, "application/json", ujson.dumps(load_log())
+    if path == "/api/log" and method == "DELETE":
+        try:
+            import os
+            os.remove(EVENT_LOG_FILE)
+        except OSError:
+            pass
+        return 200, "application/json", '{"ok":true}'
     if path == "/api/config" and method == "GET":
         return 200, "application/json", ujson.dumps(load_config())
     if path == "/api/config" and method == "POST":
@@ -843,8 +963,10 @@ def restore_state():
             save_last("timer_off")
             if mode == "pulse":
                 strahler.start(on_ms=state.get("on_ms", 100), off_ms=state.get("off_ms", 50))
+                log_event("restore", mode="pulse", on_ms=state.get("on_ms", 100), off_ms=state.get("off_ms", 50))
             else:
                 strahler.on()
+                log_event("restore", mode="on")
     except Exception as e:
         print("Zustand konnte nicht wiederhergestellt werden:", e)
 
@@ -857,6 +979,12 @@ def main():
         except Exception as e:
             print("Boot-WLAN-Verbindung fehlgeschlagen, versuche es weiter:", e)
             time.sleep_ms(3000)
+    try:
+        import ntptime
+        ntptime.settime()
+    except Exception as e:
+        print("NTP-Zeitsync fehlgeschlagen:", e)
+    log_event("boot")
     try:
         import _thread
         import mdns_responder
