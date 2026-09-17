@@ -698,6 +698,14 @@ def connect_wifi(ssid=None, password=None, timeout_s=15, retries=6):
     # Manche Access Points (z.B. mobile Hotspots) brauchen gelegentlich
     # mehrere Anlaeufe, bevor die Verbindung wirklich zustande kommt -
     # daher mehrere komplette Verbindungsversuche statt nur einem.
+    #
+    # Eingebaute LED als Status-Anzeige ohne USB-Zugriff:
+    #   langsames Blinken = verbindet gerade
+    #   durchgehend an     = verbunden
+    #   kurzes schnelles Blinken = alle Versuche fehlgeschlagen
+    from machine import Pin
+    status_led = Pin("LED", Pin.OUT)
+
     if ssid is None or password is None:
         ssid, password = load_wifi_config()
     wlan = network.WLAN(network.STA_IF)
@@ -714,12 +722,20 @@ def connect_wifi(ssid=None, password=None, timeout_s=15, retries=6):
         time.sleep_ms(500)
         wlan.connect(ssid, password)
         start = time.ticks_ms()
+        blink = False
         while time.ticks_diff(time.ticks_ms(), start) < timeout_s * 1000:
             if wlan.isconnected():
+                status_led.value(1)
                 print("WLAN verbunden:", wlan.ifconfig())
                 return wlan
+            blink = not blink
+            status_led.value(blink)
             time.sleep_ms(200)
         print("WLAN-Versuch", attempt, "fehlgeschlagen (Status", wlan.status(), ")")
+    for _ in range(10):
+        status_led.value(not status_led.value())
+        time.sleep_ms(80)
+    status_led.value(0)
     raise RuntimeError("WLAN-Verbindung fehlgeschlagen nach " + str(retries) + " Versuchen")
 
 
